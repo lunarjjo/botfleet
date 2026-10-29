@@ -1,0 +1,32 @@
+{
+  "name": "botfleet",
+  "version": "0.1.0",
+  "description": "Command a fleet of Minecraft bots like an RTS: live 2D tactical radar, click-to-move pathfinding, chat commands, and fleet telemetry in one lightweight web console.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "minecraft",
+    "mineflayer",
+    "bot",
+    "fleet",
+    "radar",
+    "pathfinding",
+    "realtime",
+    "websocket",
+    "nodejs",
+    "game-automation"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "mineflayer": "^4.39.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "vec3": "^0.1.10",
+    "ws": "^8.22.0"
+  }
+}

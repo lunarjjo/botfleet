@@ -1,0 +1,8 @@
+node_modules/
+npm-install.log
+*.log
+.DS_Store
+.env
+server/
+paper-*.jar
+eula.txt

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0c0d12">
+  <title>botfleet console</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <rect x="1.5" y="1.5" width="21" height="21" rx="4.5" fill="none" stroke="#8b5dff" stroke-width="2"/>
+          <path d="M12 12 L12 3.5 A8.5 8.5 0 0 1 20.5 12 Z" fill="#8b5dff" opacity="0.38"/>
+          <circle cx="16.4" cy="7.6" r="1.4" fill="#8b5dff"/>
+          <circle cx="12" cy="12" r="2.6" fill="#8b5dff"/>
+        </svg>
+        <span class="wordmark">botfleet</span>
+        <span class="tagline">minecraft bots, commanded like an rts</span>
+      </div>
+      <div class="conn">
+        <span id="conn-dot" class="dot off"></span>
+        <span id="conn-text">offline</span>
+        <span class="sep">|</span>
+        <span id="fleet-count">0 units</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel units-panel" aria-label="fleet units">
+      <h2>units</h2>
+      <form id="add-form" class="add-form">
+        <input id="f-name" placeholder="name" maxlength="16" autocomplete="off" required>
+        <input id="f-host" placeholder="host" value="127.0.0.1" autocomplete="off" required>
+        <input id="f-port" placeholder="port" value="25565" inputmode="numeric" autocomplete="off">
+        <input id="f-version" placeholder="version (auto)" autocomplete="off">
+        <button type="submit" class="primary">deploy unit</button>
+      </form>
+      <div id="bot-cards" class="bot-cards"></div>
+    </section>
+
+    <section class="panel radar-panel" aria-label="tactical radar">
+      <header class="radar-head">
+        <h2 id="radar-title">radar — no unit selected</h2>
+        <span class="radar-live" aria-hidden="true"></span>
+      </header>
+      <div class="radar-body">
+        <div class="radar-wrap">
+          <div class="radar-frame">
+            <canvas id="radar" width="640" height="640"></canvas>
+            <i class="scan" aria-hidden="true"></i>
+            <i class="tick tl" aria-hidden="true"></i>
+            <i class="tick tr" aria-hidden="true"></i>
+            <i class="tick bl" aria-hidden="true"></i>
+            <i class="tick br" aria-hidden="true"></i>
+          </div>
+          <div id="radar-hint" class="radar-hint">click the map to send the selected unit walking</div>
+        </div>
+        <div class="radar-legend">
+          <span><i class="sw" style="background:#8b5dff"></i>this unit</span>
+          <span><i class="sw" style="background:#4fd6ff"></i>player</span>
+          <span><i class="sw" style="background:#ff5d5d"></i>hostile</span>
+          <span><i class="sw" style="background:#f0e9c8"></i>passive</span>
+          <span><i class="sw" style="background:#20242c"></i>unknown</span>
+          <span class="right" id="radar-coords">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel feed-panel" aria-label="event feed and console">
+      <h2>console</h2>
+      <form id="console-form" class="console-form">
+        <select id="console-target"></select>
+        <input id="console-input" placeholder="command — try: goto 100 -20 / come / where / help" autocomplete="off">
+        <button type="submit" class="primary">send</button>
+      </form>
+      <div id="feed" class="feed" role="log" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="foot-inner">
+      <span>botfleet v0.1.0</span>
+      <span class="sep">|</span>
+      <a href="https://github.com/lunarjjo/botfleet" target="_blank" rel="noopener">github.com/lunarjjo/botfleet</a>
+      <span class="sep">|</span>
+      <span>built by <a href="https://github.com/lunarjjo" target="_blank" rel="noopener">Lunar</a></span>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
