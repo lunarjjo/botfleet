@@ -65,6 +65,10 @@ function renderCard (s) {
   }
   const card = document.querySelector(`[data-card="${s.name}"]`)
   card.classList.toggle('selected', state.selected === s.name)
+  const p = s.pilot
+  const pilotInfo = (p && p.task && p.task !== 'idle')
+    ? `${p.progress}/${p.total}${p.replans ? ' · ' + p.replans + ' replan' + (p.replans > 1 ? 's' : '') : ''}${p.partial ? ' · partial' : ''}`
+    : null
   card.innerHTML = `
     <div class="card-head">
       <span class="card-name">${s.name}</span>
@@ -79,7 +83,8 @@ function renderCard (s) {
       <div><span class="k">task</span><span class="v">${s.task}</span></div>
       <div><span class="k">up</span><span class="v">${fmtUptime(s.uptime)}</span></div>
       <div><span class="k">seen</span><span class="v">${s.players.length} players · ${s.entities} entities</span></div>
-    </div>`
+    </div>
+    ${pilotInfo ? `<div class="card-path"><span class="k">path</span><span class="v">${pilotInfo}${p.goal ? ' · ' + p.goal : ''}</span></div>` : ''}`
   const kill = card.querySelector('.kill')
   kill.addEventListener('click', (e) => {
     e.stopPropagation()
@@ -192,6 +197,33 @@ function drawRadar (f) {
   // the unit itself: purple arrow rotated by yaw
   const bx = toX(f.bot.x)
   const by = toY(f.bot.z)
+
+  // the planned pilot path: amber dashed polyline ending in a goal marker
+  const bs = state.bots.get(f.name)
+  if (bs && Array.isArray(bs.path) && bs.path.length > 1) {
+    ctx.strokeStyle = 'rgba(245,197,66,0.85)'
+    ctx.lineWidth = 2
+    ctx.setLineDash([5, 3])
+    ctx.beginPath()
+    for (let i = 0; i < bs.path.length; i++) {
+      const pt = bs.path[i]
+      const cx = (pt[0] + 0.5 - f.ox) * px
+      const cy = (pt[2] + 0.5 - f.oz) * px
+      if (i === 0) ctx.moveTo(cx, cy)
+      else ctx.lineTo(cx, cy)
+    }
+    ctx.stroke()
+    ctx.setLineDash([])
+    const last = bs.path[bs.path.length - 1]
+    const lx = (last[0] + 0.5 - f.ox) * px
+    const ly = (last[2] + 0.5 - f.oz) * px
+    ctx.fillStyle = '#f5c542'
+    ctx.fillRect(lx - 3, ly - 3, 6, 6)
+    ctx.strokeStyle = 'rgba(27,24,38,0.9)'
+    ctx.lineWidth = 1
+    ctx.strokeRect(lx - 3, ly - 3, 6, 6)
+  }
+
   const yaw = f.bot.yaw || 0
   ctx.translate(bx, by)
   ctx.rotate(-yaw + Math.PI)
@@ -289,6 +321,7 @@ function connect () {
         refreshCounter()
         refreshConsoleTargets()
         if (!state.selected && msg.status === 'online') selectUnit(msg.name)
+        if (state.selected === msg.name && state.lastRadar) drawRadar(state.lastRadar)
         break
       }
       case 'added':

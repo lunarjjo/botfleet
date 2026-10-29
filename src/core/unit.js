@@ -63,10 +63,6 @@ class Unit extends EventEmitter {
     })
     this.bot = bot
 
-    if (this.deps.pathfinderPlugin) {
-      try { bot.loadPlugin(this.deps.pathfinderPlugin) } catch (e) { /* already loaded */ }
-    }
-
     bot.once('spawn', () => this._onSpawn())
     bot.on('end', () => this._onEnd())
     bot.on('kicked', (reason) => {
@@ -167,6 +163,7 @@ class Unit extends EventEmitter {
       if (bot.entities) entities = Object.keys(bot.entities).length
     }
     const p = this._pos()
+    const nav = this.navigator
     return {
       name: this.name,
       status: this.status,
@@ -179,7 +176,9 @@ class Unit extends EventEmitter {
       food: bot && typeof bot.food === 'number' ? bot.food : null,
       position: p,
       yaw: bot && bot.entity && typeof bot.entity.yaw === 'number' ? +bot.entity.yaw.toFixed(2) : null,
-      task: this.navigator ? this.navigator.task : 'idle',
+      task: nav ? nav.task : 'idle',
+      pilot: nav && nav.pilotInfo ? nav.pilotInfo() : null,
+      path: nav && nav.pathPoints ? nav.pathPoints() : [],
       players,
       entities
     }
@@ -235,6 +234,10 @@ class Unit extends EventEmitter {
         case 'goto': {
           if (!this.navigator) throw new Error('not online')
           return this.navigator.goto(args.x, args.y, args.z, source)
+        }
+        case 'mine': {
+          if (!this.navigator) throw new Error('not online')
+          return this.navigator.mine([args.block], args.count, source)
         }
         case 'come': {
           if (!this.navigator) throw new Error('not online')

@@ -91,3 +91,22 @@ test('every command has help text', () => {
   assert.strictEqual(helpLines().length, COMMANDS.length)
   for (const line of helpLines()) assert.ok(line.length > 5)
 })
+
+test('mine: parses block name and optional count', () => {
+  const r = parseCommand('mine dirt')
+  assert.ok(r.ok)
+  assert.deepStrictEqual(r.args, { block: 'dirt', count: 1 })
+
+  const r2 = parseCommand('mine stone 4')
+  assert.ok(r2.ok)
+  assert.deepStrictEqual(r2.args, { block: 'stone', count: 4 })
+})
+
+test('mine: rejects junk names and bad counts', () => {
+  assert.ok(!parseCommand('mine').ok)
+  assert.ok(!parseCommand('mine Dirt Block').ok)
+  assert.ok(!parseCommand('mine dirt 0').ok)
+  assert.ok(!parseCommand('mine dirt 65').ok)
+  assert.ok(!parseCommand('mine dirt x').ok)
+  assert.ok(!parseCommand('mine dirt 2 extra').ok)
+})

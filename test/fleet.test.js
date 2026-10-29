@@ -2,58 +2,19 @@
 
 const test = require('node:test')
 const assert = require('node:assert')
-const { EventEmitter } = require('events')
 const { Fleet } = require('../src/core/fleet')
+const { FakeBot, VoxelWorld } = require('./helpers/fake')
 const { Vec3 } = require('vec3')
-const mcData = require('minecraft-data')('1.21.4')
 
-// a fake mineflayer bot. it speaks just enough of the API for a Unit to
-// believe it is online, without any network. the registry is real
-// minecraft-data, because mineflayer-pathfinder's Movements needs it.
-class FakeBot extends EventEmitter {
-  constructor (opts) {
-    super()
-    this.username = opts.username
-    this.options = opts
-    this.entity = null
-    this.players = {}
-    this.entities = {}
-    this.health = null
-    this.food = null
-    this.version = '1.21.4'
-    this.chats = []
-    this.quitCalled = false
-    this.inventory = { items: () => [] }
-    this.world = { getBlock: () => null }
-    this.registry = mcData
-    this.physics = { gravity: 32, stepHeight: 1.001 }
-    this.pathfinder = {
-      setMovements () {},
-      setGoal () {},
-      stop () {}
-    }
-  }
+// fleet-level tests over the kinematic fake bot: lifecycle, broadcasts,
+// command routing, decommissioning, auto-reconnect — the shell around the
+// pilot engine.
 
-  chat (msg) { this.chats.push(msg) }
-
-  quit () {
-    this.quitCalled = true
-    this.emit('end')
-  }
-
-  spawnAt (x, y, z) {
-    this.entity = { position: new Vec3(x, y, z), yaw: 0 }
-    this.health = 20
-    this.food = 20
-    this.emit('spawn')
-  }
-}
-
-function makeFleet () {
+function makeFleet (world) {
   const created = []
+  const w = world || (() => { const x = new VoxelWorld(); x.ground(-30, -30, 30, 30, 63); return x })()
   const deps = {
-    createBot: (opts) => { const b = new FakeBot(opts); created.push(b); return b },
-    pathfinderPlugin: { name: 'pathfinder', load () {} },
+    createBot: (opts) => { const b = new FakeBot(opts, w); created.push(b); return b },
     Vec3
   }
   return { fleet: new Fleet(deps), created }
@@ -172,15 +133,23 @@ test('auto-reconnect: end schedules a new spawn attempt', async () => {
   } finally { cleanup(fleet) }
 })
 
-test('goto updates the task label', async () => {
+test('goto walks there for real and clears the task', async () => {
   const { fleet, created } = makeFleet()
   try {
     fleet.add({ name: 'Scout', autoReconnect: false })
     created[0].spawnAt(0, 64, 0)
-    const r = await fleet.command('Scout', 'goto 12 -5')
+    const r = await fleet.command('Scout', 'goto 6 -4')
     assert.strictEqual(r.ok, true)
     assert.strictEqual(fleet.list()[0].task, 'goto')
-    created[0].emit('goal_reached')
-    assert.strictEqual(fleet.list()[0].task, 'idle')
+    const t0 = Date.now()
+    for (;;) {
+      const s = fleet.list()[0]
+      if (s.task === 'idle') break
+      if (Date.now() - t0 > 10000) assert.fail('goto did not finish in 10s')
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    const s = fleet.list()[0]
+    assert.ok(Math.abs(s.position.x - 6) <= 1)
+    assert.ok(Math.abs(s.position.z + 4) <= 1)
   } finally { cleanup(fleet) }
 })

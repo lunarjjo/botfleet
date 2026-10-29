@@ -3,6 +3,39 @@
 All notable changes to botfleet are documented here.
 The format follows Keep a Changelog; versioning follows SemVer.
 
+## [0.2.0] - 2026-10-30
+
+### Added
+
+- **the pilot engine** (`src/core/pilot/`): a from-scratch, original-JavaScript
+  pathfinding engine following the architecture popularized by baritone —
+  A* over standing positions, a goal system (block / near / xz / y-level /
+  composite / inverted / run-away / follow) with admissible heuristics, a
+  full movement vocabulary (traverse, diagonal with corner rule, ascend,
+  descend, fall with damage caps and water cushioning, swim, ladder climb,
+  opt-in parkour and pillar placement), dig-through with hardness-based
+  break costs, best-partial paths toward unreachable goals, tick-level
+  plan validation with splicing, and escalating stuck recovery.
+- `mine <block> [count]` command: finds the nearest loaded blocks by name,
+  paths to them, digs, and repeats.
+- The active plan streams to the console: `state` frames now carry the
+  path polyline and pilot progress (goal, steps done, replans, partial
+  flag); the radar draws it as an amber dashed line with a goal marker,
+  and unit cards show live pathing info.
+- `goto` without a y now targets the horizontal position at any height
+  (GoalXZ), and 3-argument goto targets an exact block (GoalBlock).
+- Live end-to-end suite extended to 29 checks: long-range 60-block goto,
+  plan streaming, real block mining, and a natural-terrain crossing on a
+  second real-worldgen vanilla server (deterministic seed).
+- `MC_DIR` / `MC_PORT` / `MC_LEVEL_TYPE` / `MC_SEED` knobs in
+  `scripts/e2e-server.sh` for booting terrain servers.
+
+### Changed
+
+- mineflayer-pathfinder is no longer a dependency: all movement is owned
+  by the bundled pilot engine (dependencies stay at four: mineflayer,
+  minecraft-data, vec3, ws).
+
 ## [0.1.1] - 2026-10-29
 
 ### Fixed

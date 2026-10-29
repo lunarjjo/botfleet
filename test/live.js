@@ -212,6 +212,100 @@ async function main () {
     check('fleet shrinks to Relay only', after.body.bots.length === 1 && after.body.bots[0].name === 'Relay')
     const ghostDel = await del('/api/bots/Nobody')
     check('DELETE on missing unit (404)', ghostDel.status === 404)
+
+    // 9. pilot engine: long-range goto across the superflat
+    const relayNow = (await get('/api/bots')).body.bots.find((b) => b.name === 'Relay')
+    const start = relayNow.position
+    const far = { x: Math.round(start.x) + 60, z: Math.round(start.z) }
+    let maxPathLen = 0
+    const farCmd = await post('/api/bots/Relay/command', { text: `goto ${far.x} ${far.z}` })
+    check('pilot: long goto accepted', farCmd.body.ok)
+    await until(async () => {
+      const r = await get('/api/bots')
+      const b = r.body.bots.find((x) => x.name === 'Relay')
+      if (b && b.path) maxPathLen = Math.max(maxPathLen, b.path.length)
+      return b && b.task === 'idle'
+    }, 150000, 'Relay to walk 60 blocks')
+    const relayDone = (await get('/api/bots')).body.bots.find((b) => b.name === 'Relay')
+    const dx = Math.abs(relayDone.position.x - far.x)
+    const dz = Math.abs(relayDone.position.z - far.z)
+    check('pilot: walks 60 blocks and arrives', dx <= 2 && dz <= 2,
+      `landed at ${Math.round(relayDone.position.x)},${Math.round(relayDone.position.z)} (target ${far.x},${far.z})`)
+    check('pilot: the plan streams to the console', maxPathLen >= 10, `longest path frame: ${maxPathLen} points`)
+
+    // 10. pilot engine: mine by block name
+    const mineCmd = await post('/api/bots/Relay/command', { text: 'mine grass_block 2' })
+    check('pilot: mine accepted', mineCmd.body.ok)
+    const minedLog = await until(async () => {
+      const r = await get('/api/bots')
+      const b = r.body.bots.find((x) => x.name === 'Relay')
+      return b && b.task === 'idle' ? 'done' : null
+    }, 180000, 'Relay to mine 2 grass blocks').then(() => true)
+    const minedSeen = msgs.find((m) => m.t === 'log' && m.name === 'Relay' && /mined 2 grass_block/.test(m.text))
+    check('pilot: mines real blocks by name', !!minedSeen && !!minedLog, minedSeen ? minedSeen.text : 'no mine log seen')
+    await until(async () => {
+      const r = await get('/api/bots')
+      return r.body.bots.length === 1
+    }, 5000, 'fleet to settle').catch(() => null)
+    const relayGone = await del('/api/bots/Relay')
+    check('DELETE Relay before the terrain phase (200)', relayGone.status === 200)
+
+    // 11. pilot engine: natural terrain server — real hills, real pathing
+    const terrain = spawn('bash', [path.join(__dirname, '..', 'scripts', 'e2e-server.sh')], {
+      env: Object.assign({}, process.env, {
+        MC_DIR: 'server-normal',
+        MC_PORT: '25566',
+        MC_LEVEL_TYPE: 'default',
+        MC_SEED: 'botfleet2'
+      }),
+      cwd: path.join(__dirname, '..'),
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    terrain.stdout.on('data', (d) => process.stdout.write('[terrain] ' + d))
+    terrain.stderr.on('data', (d) => process.stderr.write('[terrain!] ' + d))
+    try {
+      const terrainUp = await until(async () => serverReachable('127.0.0.1', 25566, 2000), 180000, 'terrain server to boot')
+      check('terrain server boots (natural world)', !!terrainUp)
+      const ranger = await post('/api/bots', { name: 'Ranger', host: MC_HOST, port: 25566 })
+      check('POST /api/bots Ranger on terrain (201)', ranger.status === 201 && ranger.body.bot.name === 'Ranger')
+      await until(async () => {
+        const r = await get('/api/bots')
+        const b = r.body.bots.find((x) => x.name === 'Ranger')
+        return b && b.status === 'online'
+      }, 120000, 'Ranger to spawn on terrain')
+      const rStart = (await get('/api/bots')).body.bots.find((b) => b.name === 'Ranger').position
+      const tTarget = { x: Math.round(rStart.x) + 40, z: Math.round(rStart.z) }
+      let yMin = rStart.y
+      let yMax = rStart.y
+      let terrainReplans = 0
+      const walk = await post('/api/bots/Ranger/command', { text: `goto ${tTarget.x} ${tTarget.z}` })
+      check('pilot: terrain goto accepted', walk.body.ok)
+      await until(async () => {
+        const r = await get('/api/bots')
+        const b = r.body.bots.find((x) => x.name === 'Ranger')
+        if (b) {
+          if (b.position) {
+            yMin = Math.min(yMin, b.position.y)
+            yMax = Math.max(yMax, b.position.y)
+          }
+          if (b.pilot) terrainReplans = Math.max(terrainReplans, b.pilot.replans || 0)
+        }
+        return b && b.task === 'idle'
+      }, 200000, 'Ranger to cross 40 blocks of terrain')
+      const rEnd = (await get('/api/bots')).body.bots.find((b) => b.name === 'Ranger').position
+      const tdx = Math.abs(rEnd.x - tTarget.x)
+      const tdz = Math.abs(rEnd.z - tTarget.z)
+      check('pilot: crosses natural terrain and arrives', tdx <= 3.5 && tdz <= 3.5,
+        `from ${Math.round(rStart.x)},${Math.round(rStart.y)},${Math.round(rStart.z)} to ${Math.round(rEnd.x)},${Math.round(rEnd.y)},${Math.round(rEnd.z)} (y range ${Math.round(yMin)}..${Math.round(yMax)}, ${terrainReplans} replans)`)
+      check('pilot: terrain crossing handled elevation', (yMax - yMin) >= 1 || terrainReplans >= 1,
+        `y range ${Math.round(yMin)}..${Math.round(yMax)}, replans ${terrainReplans}`)
+      const rangerGone = await del('/api/bots/Ranger')
+      check('DELETE Ranger (200)', rangerGone.status === 200)
+    } finally {
+      terrain.kill('SIGTERM')
+      await sleep(1500)
+      if (!terrain.killed) terrain.kill('SIGKILL')
+    }
   } finally {
     app.kill('SIGTERM')
     await sleep(300)

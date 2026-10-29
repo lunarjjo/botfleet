@@ -1,7 +1,7 @@
 {
   "name": "botfleet",
-  "version": "0.1.1",
-  "description": "Command a fleet of Minecraft bots like an RTS: live 2D tactical radar, click-to-move pathfinding, chat commands, and fleet telemetry in one lightweight web console.",
+  "version": "0.2.0",
+  "description": "Command a fleet of Minecraft bots like an RTS: a bundled baritone-style A* pilot engine, live 2D tactical radar with path overlay, click-to-move, chat commands, mining, and fleet telemetry in one lightweight web console.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -26,7 +26,7 @@
   "license": "MIT",
   "dependencies": {
     "mineflayer": "^4.39.0",
-    "mineflayer-pathfinder": "^2.4.5",
+    "minecraft-data": "^3.0.0",
     "vec3": "^0.1.10",
     "ws": "^8.22.0"
   }

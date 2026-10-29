@@ -27,24 +27,38 @@ shading, a hostile mob marked red, and the feed catching a night-time death*
 
 ## features
 
+- **the pilot engine** — a bundled, original-JavaScript pathfinding engine in
+  the architectural tradition of [baritone](https://github.com/cabaletta/baritone):
+  A* over standing positions with a full minecraft movement vocabulary
+  (walk, diagonal, ascend, descend, fall, swim, climb, parkour, pillar),
+  honest costs (dig time from block hardness, fall damage, swim penalty),
+  goal objects (block / near / xz / y-level / composite / follow),
+  path splicing when the world changes under the plan, stuck recovery,
+  and best-partial paths when the goal lies beyond the loaded world.
+  No external pathfinder dependency — the whole engine ships in the repo.
 - **2d tactical radar** — the topmost block of every column within 32
   blocks of the unit, color-coded by material and shaded by relative
   height, streamed at 1 fps over the websocket. entities are drawn and
-  classified (players cyan, hostiles red, passive mobs cream).
-- **click-to-move** — click the radar and the unit pathfinds there with
-  mineflayer-pathfinder. digging is disabled by design: a misclick must
-  never grief terrain.
+  classified (players cyan, hostiles red, passive mobs cream). the active
+  plan paints as an amber dashed line with a goal marker.
+- **click-to-move** — click the radar and the unit pathfinds there with the
+  pilot engine. like baritone, the planner may dig through breakable blocks
+  when that is genuinely the cheapest route (never obsidian-class blocks);
+  `stop` halts any plan instantly.
 - **chat commands, two ways** — in-game players address a unit by name
   ("Scout, follow me", "Relay: goto 100 -20", whispers work too), and the
   web console accepts the exact same grammar.
+- **mining** — `mine <block> [count]` finds the nearest loaded blocks of
+  that type, paths to them, digs them, and repeats.
 - **fleet lifecycle** — deploy and decommission units at runtime over REST
   or the dashboard form; auto-reconnect with exponential backoff keeps
   units alive through server restarts.
 - **survivor behavior** — units eat from their inventory when hunger drops,
   choosing the best food they carry.
-- **live telemetry** — health, food, position, task, uptime, nearby players
-  and entity counts, streamed every second.
-- **3 runtime dependencies** — mineflayer, mineflayer-pathfinder and ws.
+- **live telemetry** — health, food, position, task, active goal, path
+  progress and replans, uptime, nearby players and entity counts, streamed
+  every second.
+- **4 runtime dependencies** — mineflayer, minecraft-data, vec3 and ws.
   The console is vanilla JS with no build step.
 
 ## quick start
@@ -90,6 +104,7 @@ In-game, players talk to units by name:
 | `come` | `[player]` | walk to a player (default: whoever issued it) |
 | `follow` | `<player>` or `off` | keep following a player |
 | `goto` | `<x> <z>` or `<x> <y> <z>` | pathfind to coordinates |
+| `mine` | `<block> [count]` | path to and dig blocks by name |
 | `stop` | | halt movement and clear the task |
 | `where` | | report position and current task |
 | `say` | `<message>` | send a chat message |
@@ -136,12 +151,69 @@ blocks the event loop, and rescans are queued when `blockUpdate` events
 arrive. Frames compose the cached chunks around the unit's position into
 one 64x64 grid, translate block names to colors through a hand-tuned
 palette with family fallbacks, and ship as base64. The browser paints
-straight to a canvas, shading each cell by its height relative to the bot.
+straight to a canvas, shading each cell by its height relative to the bot,
+and overlays the active pilot path as an amber dashed line.
+
+## the pilot engine
+
+`src/core/pilot/` is a from-scratch pathfinding engine that follows the
+architecture popularized by baritone — the goal system, the movement
+vocabulary, the cost model, path splicing, and best-partial behavior.
+It is an original implementation in JavaScript, written for this repo;
+no baritone code was copied or translated (see credits).
+
+The pieces, each independently unit-tested:
+
+- `heap.js` — binary min-heap with deterministic tie-breaking, the hot loop
+- `goals.js` — `GoalBlock`, `GoalNear`, `GoalXZ`, `GoalYLevel`,
+  `GoalComposite` (any-of), `GoalInverted`, `GoalRunAway`, `GoalFollow`
+  (a live target), each with an admissible heuristic so A* stays optimal
+- `world.js` — block semantics over any `getBlock(x,y,z)`: passable,
+  standable, liquid, climbable, breakable-with-hardness. unknown or
+  unloaded cells are walls — the fleet never plans into the fog
+- `moves.js` — movement generation and costs: traverse, diagonal (corner
+  rule included), ascend, descend, fall (damage-capped, water-cushioned),
+  swim, climb, parkour (opt-in), pillar/bridge (opt-in, needs blocks),
+  and dig-through: break time estimated from hardness the way vanilla
+  hand-breaking works (harvestable *1.5, tool-gated *5)
+- `astar.js` — A* with node budget and wall-clock timeout, returning the
+  best partial path when the goal is unreachable in the loaded world
+- `executor.js` — turns the plan into live controls: look, hold forward,
+  jump at steps, dig blockers first, place pillar blocks; re-validates the
+  next four movements every tick and **splices** (replans from the current
+  position) the moment the world invalidates the plan; stuck detection
+  escalates from a nudge-jump to digging the obstruction to a forced replan
+- `pilot.js` — the per-unit brain: `goto` / `come` / `follow` / `mine` /
+  `stop`, replan debouncing, partial-path continuation (walk to the edge,
+  replan as more chunks load, stop cleanly when the world runs out)
+
+### baritone capability map
+
+What a full baritone install does, and where botfleet stands:
+
+| capability | baritone | botfleet |
+| --- | --- | --- |
+| A* pathing with movement costs | yes | **ported** — own engine, admissible heuristics |
+| break-through with dig costs | yes | **ported** — hardness-based, opt-out setting |
+| goal system (block/near/xz/ylevel/composite) | yes | **ported** |
+| follow / come | yes | **ported** — live target, radius slack |
+| mine by block name | yes | **ported** — nearest-match loop with count |
+| best partial path toward unreachable goals | yes | **ported** — with clean-stop on no progress |
+| splicing when the world changes | segments | **ported** — tick validation + replan debounce |
+| stuck recovery | yes | **ported** — nudge, dig-out, replan escalation |
+| swim / climb / fall damage model | yes | **ported** — water landings, ladder columns |
+| parkour jumps | yes | partial — one-gap jumps, off by default |
+| pillar / bridge placing | yes | partial — generation + executor, off by default |
+| `#goto`-style chat interface | prefix `#` | **ported** — "UnitName, goto x z" addressing |
+| elytra / nether flights | yes | roadmap |
+| builder / schematics | yes | roadmap |
+| combat / killaura behaviors | yes | out of scope for a fleet console |
+| chunk database persistence | via cache | roadmap — botfleet reloads via mineflayer |
 
 ## development
 
 ```console
-$ npm test        # 32 unit tests + live suite
+$ npm test        # 87 tests: engine, fleet, commands + self-skipping live suite
 ```
 
 The core is dependency-injected: unit and fleet tests run against a fake
@@ -153,20 +225,24 @@ Set `BOTFLEET_LIVE_E2E=1` to flip that default: the suite then *requires*
 a server and fails fast with a clear message instead of skipping.
 
 For the full black-box check, boot a server and run the end-to-end suite —
-it deploys two units, drives them over REST and websocket, and asserts the
-radar, the chat bridge and the pathfinding:
+it deploys units, drives them over REST and websocket, and asserts the
+radar, the chat bridge and the pilot engine (long-range goto, mining by
+name, and a crossing of natural terrain on a second, real-worldgen
+server):
 
 ```console
 $ ./scripts/e2e-server.sh &
 $ npm run test:live          # or: MC_HOST=127.0.0.1 MC_PORT=25565 node test/live.js
 [...]
 PASS  Scout online — v1.21.8 hp 20 pos 3.5,-60,-6.5
-PASS  chat reached the world
 PASS  click-to-walk pathfinding works — arrived at 24.5,-7.5
-PASS  radar frames stream terrain — palette 2 colors, 13 entities
 PASS  in-game chat commands drive units — Scout at 4.5,0.5, next to Relay
+PASS  pilot: walks 60 blocks and arrives — landed at 60,-1 (target 60,0)
+PASS  pilot: the plan streams to the console — longest path frame: 61 points
+PASS  pilot: mines real blocks by name — mined 2 grass_block
+PASS  pilot: crosses natural terrain and arrives — y range 63..71
 [...]
-e2e: 22/22 checks passed
+e2e: 29/29 checks passed
 ```
 
 ## limitations and roadmap
@@ -175,7 +251,10 @@ e2e: 22/22 checks passed
   fan-out to many browsers per unit wants delta frames or per-client interest sets
 - surface-only radar: caves and interiors below the scan band are invisible
 - `come`/`follow` need the target player within the unit's render distance
-- roadmap: entity path trails on the radar, patrol routes from the UI,
+- parkour and pillar/bridge movements are generated and tested at the
+  planner level but default-off in live fleets until they earn trust
+- roadmap: elytra/nether flights and a builder/schematics mode (the big
+  baritone features still on the map), patrol routes from the UI,
   multi-unit formations, and a scripted scenario mode
 
 ## credits
@@ -184,8 +263,17 @@ botfleet is built by [Lunar](https://github.com/lunarjjo), an autonomous
 open-source agent running on the agent framework developed by
 [@kasyaira](https://github.com/kasyaira).
 
-It stands on [mineflayer](https://github.com/PrismarineJS/mineflayer) and
-[mineflayer-pathfinder](https://github.com/PrismarineJS/mineflayer-pathfinder)
+The pathfinding engine follows the architecture popularized by
+[baritone](https://github.com/cabaletta/baritone) by cabaletta and its
+contributors (LGPL-3.0): the goal system, the movement vocabulary, cost
+modeling, splicing, and best-partial behavior were all studied from their
+published design and reimplemented from scratch in original JavaScript
+for this repository — no baritone source was copied or translated, and
+this repo remains MIT-licensed. Full credit for the ideas that make the
+pilot engine good belongs to that project.
+
+It also stands on [mineflayer](https://github.com/PrismarineJS/mineflayer)
+and [minecraft-data](https://github.com/PrismarineJS/node-minecraft-data)
 by the PrismarineJS contributors — without that ecosystem none of this
 exists.
 

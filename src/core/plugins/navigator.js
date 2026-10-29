@@ -1,60 +1,56 @@
 'use strict'
 
-const { Movements, goals } = require('mineflayer-pathfinder')
+// the movement layer. sits on the pilot engine — an original javascript
+// implementation of the pathfinding architecture popularized by baritone
+// (goals, A* with movement costs, splicing, stuck recovery, best partial
+// paths) — and exposes the same three verbs the console always had:
+// goto / come / follow, plus mine. one `task` label for the UI.
 
-// movement layer. wraps mineflayer-pathfinder behind three verbs
-// (goto / come / follow) and exposes a single `task` label for the console.
-// canDig stays false on purpose: click-to-move must never grief terrain.
+const { Pilot } = require('../pilot/pilot')
+
 function attachNavigator (unit, bot) {
-  const movements = new Movements(bot)
-  movements.canDig = false
-  bot.pathfinder.setMovements(movements)
+  const pilot = new Pilot({ bot, unit, deps: unit.deps })
 
   const state = {
+    pilot,
     task: 'idle',
-    followName: null,
-    followTimer: null,
-    dispose () { halt() }
+    dispose () {
+      halt()
+      pilot.dispose()
+    }
   }
+
+  pilot.on('task', () => {
+    state.task = pilot.task === 'idle' ? 'idle' : pilot.task
+    unit.emit('state', unit.snapshot())
+  })
+
+  pilot.on('log', (text) => unit.log(text))
+
+  pilot.on('path', (info) => {
+    const n = info.points ? info.points.length : 0
+    unit.log(`path: ${n} blocks${info.partial ? ' (partial)' : ''} -> ${info.goal}`)
+    unit.emit('state', unit.snapshot())
+  })
+
+  pilot.on('progress', (p) => {
+    if (p.total > 0 && p.index === p.total) return // arrival logs elsewhere
+  })
+
+  pilot.on('arrived', (info) => {
+    unit.log(`arrived (${info && info.goal ? info.goal : 'target'})`)
+    state.task = 'idle'
+    unit.emit('state', unit.snapshot())
+  })
+
+  pilot.on('failed', () => {
+    state.task = 'idle'
+    unit.emit('state', unit.snapshot())
+  })
 
   function halt () {
-    if (state.followTimer) { clearInterval(state.followTimer); state.followTimer = null }
-    state.followName = null
-    try { bot.pathfinder.stop() } catch (e) { /* not moving */ }
-    try { bot.pathfinder.setGoal(null) } catch (e) { /* no goal */ }
+    try { pilot.stop() } catch (e) { /* already gone */ }
     state.task = 'idle'
-  }
-
-  function setGoal (x, y, z) {
-    bot.pathfinder.setGoal(new goals.GoalNear(x, y, z, 1))
-  }
-
-  bot.on('goal_reached', () => {
-    if (state.task !== 'idle') {
-      state.task = 'idle'
-      unit.log('arrived')
-      unit.emit('state', unit.snapshot())
-    }
-  })
-
-  bot.on('path_update', (r) => {
-    if (r && r.status === 'noPath' && state.task !== 'idle') {
-      unit.log('no path to target')
-      halt()
-      unit.emit('state', unit.snapshot())
-    }
-  })
-
-  async function goto (x, y, z, source) {
-    const targetY = y === null || y === undefined
-      ? Math.floor(bot.entity.position.y)
-      : Math.floor(y)
-    setGoal(Math.floor(x), targetY, Math.floor(z))
-    state.task = 'goto'
-    const at = `${Math.floor(x)} ${targetY} ${Math.floor(z)}`
-    unit.log(`moving to ${at}`)
-    unit.emit('state', unit.snapshot())
-    return { ok: true, reply: `moving to ${at}` }
   }
 
   function playerEntity (name) {
@@ -75,6 +71,26 @@ function attachNavigator (unit, bot) {
     return best
   }
 
+  function posOfTarget (t) {
+    return {
+      x: Math.floor(t.position.x),
+      y: Math.floor(t.position.y),
+      z: Math.floor(t.position.z)
+    }
+  }
+
+  async function goto (x, y, z, source) {
+    const r = pilot.goto(x, y, z)
+    state.task = pilot.task
+    const at = (y === null || y === undefined)
+      ? `${Math.floor(x)} ${Math.floor(z)}`
+      : `${Math.floor(x)} ${Math.floor(y)} ${Math.floor(z)}`
+    if (r.ok) unit.log(`moving to ${at}${pilot.partial ? ' (partial path)' : ''}`)
+    else unit.reply('no path to target', source)
+    unit.emit('state', unit.snapshot())
+    return r
+  }
+
   async function come (player, source) {
     const p = player ? playerEntity(player) : nearestPlayer()
     if (!p) {
@@ -82,12 +98,11 @@ function attachNavigator (unit, bot) {
       unit.reply(msg, source)
       return { ok: false, error: msg }
     }
-    const e = p.entity.position
-    setGoal(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z))
-    state.task = 'goto'
+    const r = pilot.come(posOfTarget(p.entity))
+    state.task = pilot.task
     unit.log(`moving to ${p.username}`)
     unit.emit('state', unit.snapshot())
-    return { ok: true, reply: `moving to ${p.username}` }
+    return r
   }
 
   async function follow (player, source) {
@@ -101,27 +116,31 @@ function attachNavigator (unit, bot) {
       unit.reply(msg, source)
       return { ok: false, error: msg }
     }
-    state.followName = player
+    pilot.follow(() => {
+      const p = playerEntity(player)
+      return p && p.entity ? posOfTarget(p.entity) : null
+    }, 2)
     state.task = 'follow'
     unit.log(`following ${player}`)
     unit.emit('state', unit.snapshot())
     return { ok: true, reply: `following ${player}` }
   }
 
-  if (state.followTimer) clearInterval(state.followTimer)
-  state.followTimer = setInterval(() => {
-    if (state.task !== 'follow' || !state.followName) return
-    const p = playerEntity(state.followName)
-    if (p && p.entity) {
-      const e = p.entity.position
-      try { bot.pathfinder.setGoal(new goals.GoalNear(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z), 2), true) } catch (err) { /* mid-path */ }
-    }
-  }, 2000)
+  async function mine (names, count, source) {
+    const r = pilot.mine(names, count)
+    state.task = pilot.task
+    if (!r.ok) unit.reply(r.error || 'cannot mine that', source)
+    unit.emit('state', unit.snapshot())
+    return r
+  }
 
   state.goto = goto
   state.come = come
   state.follow = follow
+  state.mine = mine
   state.stop = halt
+  state.pathPoints = () => pilot.pathPoints()
+  state.pilotInfo = () => pilot.info()
   return state
 }
 

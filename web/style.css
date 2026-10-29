@@ -718,3 +718,25 @@ body:has(.bot-card.selected) .radar-live {
     scroll-behavior: auto !important;
   }
 }
+
+/* pilot path line in unit cards */
+.card-path {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(139, 93, 255, 0.25);
+  font-size: 11px;
+}
+.card-path .k {
+  color: #f5c542;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.card-path .v {
+  color: #d8d5e6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

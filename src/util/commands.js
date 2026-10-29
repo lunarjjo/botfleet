@@ -7,11 +7,14 @@
 const MAX_COORD = 29999984 // minecraft world border
 const NAME_RE = /^[A-Za-z0-9_]{1,16}$/
 const MAX_MESSAGE = 256
+const BLOCK_NAME_RE = /^[a-z0-9_]+$/
+const MAX_MINE_COUNT = 64
 
 const COMMANDS = [
   { name: 'come', args: '[player]', help: 'walk to a player (defaults to the commander)' },
   { name: 'follow', args: '<player> | off', help: 'keep following a player, or stop' },
   { name: 'goto', args: '<x> <z> | <x> <y> <z>', help: 'pathfind to coordinates' },
+  { name: 'mine', args: '<block> [count]', help: 'pathfind to and dig blocks by name' },
   { name: 'stop', args: '', help: 'halt movement and clear the current task' },
   { name: 'where', args: '', help: 'report current coordinates' },
   { name: 'say', args: '<message>', help: 'send a chat message' },
@@ -78,6 +81,21 @@ function parseCommand (raw) {
         }
       }
       return { ok: true, name, args: { x, y, z } }
+    }
+    case 'mine': {
+      if (rest.length < 1 || rest.length > 2) return { ok: false, error: 'usage: mine <block> [count]' }
+      const block = rest[0].toLowerCase()
+      if (!BLOCK_NAME_RE.test(block)) {
+        return { ok: false, error: `"${rest[0]}" is not a block name` }
+      }
+      let count = 1
+      if (rest.length === 2) {
+        if (!/^\d+$/.test(rest[1]) || Number(rest[1]) < 1 || Number(rest[1]) > MAX_MINE_COUNT) {
+          return { ok: false, error: `count must be 1-${MAX_MINE_COUNT}` }
+        }
+        count = Number(rest[1])
+      }
+      return { ok: true, name, args: { block, count } }
     }
     case 'stop':
     case 'where':
