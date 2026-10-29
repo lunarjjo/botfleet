@@ -141,11 +141,16 @@ straight to a canvas, shading each cell by its height relative to the bot.
 ## development
 
 ```console
-$ npm test        # 32 unit tests: command grammar, colors, fleet logic
+$ npm test        # 32 unit tests + live suite
 ```
 
 The core is dependency-injected: unit and fleet tests run against a fake
 mineflayer bot with a real minecraft-data registry, no network required.
+The live suite **self-skips in about a second** when no minecraft server
+answers on `MC_HOST:MC_PORT` — which is exactly the case on CI, so
+`npm test` stays green on a runner while running everything locally.
+Set `BOTFLEET_LIVE_E2E=1` to flip that default: the suite then *requires*
+a server and fails fast with a clear message instead of skipping.
 
 For the full black-box check, boot a server and run the end-to-end suite —
 it deploys two units, drives them over REST and websocket, and asserts the
@@ -153,7 +158,7 @@ radar, the chat bridge and the pathfinding:
 
 ```console
 $ ./scripts/e2e-server.sh &
-$ MC_HOST=127.0.0.1 MC_PORT=25565 APP_PORT=3117 node test/live.js
+$ npm run test:live          # or: MC_HOST=127.0.0.1 MC_PORT=25565 node test/live.js
 [...]
 PASS  Scout online — v1.21.8 hp 20 pos 3.5,-60,-6.5
 PASS  chat reached the world

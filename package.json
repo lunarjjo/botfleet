@@ -1,11 +1,12 @@
 {
   "name": "botfleet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Command a fleet of Minecraft bots like an RTS: live 2D tactical radar, click-to-move pathfinding, chat commands, and fleet telemetry in one lightweight web console.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:live": "node test/live.js"
   },
   "keywords": [
     "minecraft",

@@ -14,6 +14,7 @@
 //   MC_HOST=127.0.0.1 MC_PORT=25565 APP_PORT=3117 node test/live.js
 
 const { spawn } = require('child_process')
+const net = require('net')
 const path = require('path')
 const WebSocket = require('ws')
 
@@ -21,6 +22,11 @@ const MC_HOST = process.env.MC_HOST || '127.0.0.1'
 const MC_PORT = Number(process.env.MC_PORT || 25565)
 const APP_PORT = Number(process.env.APP_PORT || 3117)
 const BASE = `http://127.0.0.1:${APP_PORT}`
+
+// set BOTFLEET_LIVE_E2E=1 to REQUIRE the live suite (fails fast when no
+// server answers) instead of letting it self-skip. CI runs without a
+// minecraft server, so the default there is a skip with a clear notice.
+const FORCE_LIVE = process.env.BOTFLEET_LIVE_E2E === '1'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -59,7 +65,38 @@ function check (name, ok, detail) {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`)
 }
 
+// probe the server socket once, with a short timeout, so the suite can
+// decide between "run everything" and "self-skip" in under two seconds.
+function serverReachable (host, port, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const sock = net.connect({ host, port })
+    const done = (ok) => {
+      sock.removeAllListeners()
+      sock.destroy()
+      resolve(ok)
+    }
+    sock.setTimeout(timeoutMs, () => done(false))
+    sock.once('connect', () => done(true))
+    sock.once('error', () => done(false))
+  })
+}
+
 async function main () {
+  // 0. is there actually a minecraft server to drive? without one the
+  // units can never spawn, and waiting two minutes to learn that helps
+  // nobody — skip cleanly (or fail fast when the run is forced).
+  const reachable = await serverReachable(MC_HOST, MC_PORT)
+  if (!reachable) {
+    if (FORCE_LIVE) {
+      console.error(`FATAL  live e2e forced via BOTFLEET_LIVE_E2E=1, but no server answers at ${MC_HOST}:${MC_PORT}`)
+      console.error('       boot one first: ./scripts/e2e-server.sh')
+      process.exit(1)
+    }
+    console.log(`SKIP   live e2e — no minecraft server at ${MC_HOST}:${MC_PORT}`)
+    console.log('       boot one with ./scripts/e2e-server.sh, or set BOTFLEET_LIVE_E2E=1 to require it')
+    process.exit(0)
+  }
+
   // 1. boot the console
   const app = spawn(process.execPath, [path.join(__dirname, '..', 'src', 'index.js')], {
     env: Object.assign({}, process.env, { PORT: String(APP_PORT), HOST: '127.0.0.1' }),
