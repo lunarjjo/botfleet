@@ -3,6 +3,43 @@
 All notable changes to botfleet are documented here.
 The format follows Keep a Changelog; versioning follows SemVer.
 
+## [0.4.0] - 2026-10-30
+
+### Added
+
+- **Minecraft 26.3 and 26.2 support** via `src/version-compat/`: protocol
+  and registry data vendored from the pending upstream minecraft-data PRs
+  (#1219 for 26.2, #1300/#1301 for 26.3) and injected into the installed
+  stack at require time. The overlay self-disables per version the moment
+  the installed minecraft-data ships it natively.
+- behavioral fixes for the 26.3 wire format, each found by live-testing
+  against a real vanilla server: teleport_confirm echoes the teleport
+  position/rotation, an empty tick_end follows every movement packet,
+  block_dig status ids shifted by the new CHANGE_DESTROY_DIRECTION entry,
+  and the new VecDelta entity-move / stepped PositionPath encodings are
+  translated back into the flat shapes mineflayer consumes (including the
+  entityDelta native codec from node-minecraft-protocol PR #1538).
+- `GET /api/versions` and a boot banner reporting supported versions,
+  split into official vs overlay.
+- `scripts/version-check.mjs`: compares the official Mojang release
+  manifest against official support, vendored overlay coverage, and the
+  CI e2e matrix; exits non-zero when a recent release lacks a path.
+- the daily **version-guard** workflow: turns version-check findings into
+  a tracking issue with step-by-step instructions for adding a new
+  version, so every future Minecraft release gets the same treatment.
+- live e2e CI matrix per Minecraft version (26.3, 26.2, 1.21.8) with
+  Java 25, booting real vanilla servers per job.
+
+### Fixed
+
+- pilot: an anti-drown water escape no longer silently retires the
+  original goto goal — it resumes it from the dry cell (bounded by a hop
+  budget), and a goal that itself stands in water now counts as a real
+  arrival. Surfacing these: 26.x terrain generation places lakes where
+  1.21.x terrain did not.
+- pilot: digging with the head underwater bails after 6 s instead of 20 s
+  so replanning routes around it rather than drowning mid-swing.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added

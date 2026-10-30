@@ -349,10 +349,16 @@ class Executor extends EventEmitter {
         const block = this.blockAt(c)
         if (!block || (block.boundingBox === 'empty')) continue
         this.lookAtBlock(c)
+        // digging with the head underwater is drastically slower and burns
+        // air the bot does not have — bail fast and let replanning route
+        // around it instead of drowning mid-swing
+        const p = this.pos()
+        const submerged = p && this.view.water(Math.floor(p.x), Math.floor(p.y + 1.62), Math.floor(p.z))
+        const capMs = submerged ? 6000 : 20000
         const done = this.bot.dig(block)
         await Promise.race([
           done,
-          new Promise((resolve, reject) => setTimeout(() => reject(new Error('dig timeout')), 20000))
+          new Promise((resolve, reject) => setTimeout(() => reject(new Error('dig timeout')), capMs))
         ])
       }
     } catch (e) {

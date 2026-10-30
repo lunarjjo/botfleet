@@ -124,6 +124,7 @@ class Pilot extends EventEmitter {
     this.partial = false
     this.consecutiveFails = 0
     this.partialPrevEnd = null
+    this.escapeOf = null
     if (this.placeDegraded) {
       this.placeDegraded = false
       this.s.allowPlace = true
@@ -220,12 +221,32 @@ class Pilot extends EventEmitter {
       this.replan()
       return
     }
-    // arriving into open water is not an arrival — a bot that idles in
-    // deep water drowns. step out onto the nearest dry column first.
+    // a water escape just finished: get back to the original goal from the
+    // dry cell instead of silently retiring it (terrain with lakes would
+    // otherwise end the goto wherever the escape landed). launch() re-sets
+    // task and goal synchronously and owns its failure path. a small hop
+    // budget keeps pathological shorelines from ping-ponging forever.
+    let settledByEscape = false
+    if (this.escapeOf) {
+      const resume = this.escapeOf
+      this.escapeOf = null
+      if ((this.escapeHops || 0) < 5) {
+        this.escapeHops = (this.escapeHops || 0) + 1
+        this.launch(resume.goal, resume.task).catch(() => {})
+        return
+      }
+      this.emit('log', 'water escape loop: settling at the nearest dry land')
+      settledByEscape = true
+    }
     const n = this.node()
-    if (n && this.view.water(n.x, n.y, n.z)) {
+    // reaching a goal that itself stands in water (a lake, a river, a dock)
+    // is a real arrival — only best-effort landings that stranded the bot
+    // in water mid-route justify the anti-drown escape
+    const goalMetHere = this.goal && n && this.goal.isMet(n.x, n.y, n.z)
+    if (!settledByEscape && !goalMetHere && n && this.view.water(n.x, n.y, n.z)) {
       const land = this.nearestDryCell(n)
       if (land) {
+        if (this.goal && this.task === 'goto') this.escapeOf = { goal: this.goal, task: this.task }
         const r = this.driveTo(new GoalBlock(land.x, land.y, land.z))
         if (r && (r.status === 'found' || r.status === 'partial')) return
       }
@@ -234,6 +255,7 @@ class Pilot extends EventEmitter {
     this.task = 'idle'
     this.goal = null
     this.pathPointsCache = []
+    this.escapeHops = 0
     this.emit('task')
   }
 

@@ -6,6 +6,7 @@
 ![license](https://img.shields.io/badge/license-MIT-8b5dff)
 ![node](https://img.shields.io/badge/node-%3E%3D20-8b5dff)
 ![dependencies](https://img.shields.io/badge/dependencies-4-8b5dff)
+![minecraft](https://img.shields.io/badge/minecraft-26.3%20%7C%2026.2%20%7C%201.21-8b5dff)
 
 Mineflayer bots usually live in a terminal. You spawn one, you watch it log,
 and if you want to know where it actually went you open a second tool.
@@ -67,13 +68,38 @@ shading, a hostile mob marked red, and the feed catching a night-time death*
 - **4 runtime dependencies** — mineflayer, minecraft-data, vec3 and ws.
   The console is vanilla JS with no build step.
 
+## minecraft version support
+
+botfleet tracks the newest Minecraft releases instead of waiting on the
+upstream data stack:
+
+| version | support | verified |
+| --- | --- | --- |
+| 26.3 | vendored overlay (`src/version-compat/`) | live e2e in CI |
+| 26.2 | vendored overlay (`src/version-compat/`) | live e2e in CI |
+| 26.1, 1.21.x | official minecraft-data | live e2e in CI (1.21.8) |
+
+`src/version-compat/` vendors protocol/registry data for releases the
+installed minecraft-data does not ship yet (from the matching upstream PRs,
+see `src/version-compat/data/README.md`) and applies the small behavioral
+fixes those wire formats need. Each vendored version self-disables the
+moment the installed stack supports it natively — the overlay is a stopgap,
+not a fork.
+
+Staying current is automated: `node scripts/version-check.mjs` compares the
+official Mojang release manifest against what this repo can run (official
+support, overlay, and the CI e2e matrix), and the daily `version-guard`
+workflow opens a tracking issue with exact instructions whenever a brand-new
+Minecraft release lacks a support path. `GET /api/versions` reports the same
+from a running console.
+
 ## quick start
 
 You need Node.js >= 20 and any Minecraft Java server with `online-mode=false`
 (vanilla, Paper, whatever). For a throwaway test server:
 
 ```console
-$ ./scripts/e2e-server.sh          # downloads vanilla 1.21.8, boots a superflat
+$ MC_VERSION=26.3 ./scripts/e2e-server.sh   # downloads vanilla 26.3, boots a superflat
 [...] Done (1.089s)! For help, type "help"
 ```
 
@@ -131,6 +157,7 @@ work everywhere.
 | method | path | body | returns |
 | --- | --- | --- | --- |
 | `GET` | `/api/health` | | uptime, unit count |
+| `GET` | `/api/versions` | | supported Minecraft versions (official + overlay) |
 | `GET` | `/api/bots` | | array of unit snapshots |
 | `POST` | `/api/bots` | `{name, host, port, version?, autoReconnect?}` | 201 + snapshot |
 | `DELETE` | `/api/bots/:name` | | 200 |

@@ -290,7 +290,8 @@ async function main () {
         MC_DIR: 'server-normal',
         MC_PORT: '25566',
         MC_LEVEL_TYPE: 'default',
-        MC_SEED: 'botfleet2'
+        MC_SEED: 'botfleet2',
+        MC_VERSION: process.env.MC_VERSION || '1.21.8' // e2e the same version as the flat server
       }),
       cwd: path.join(__dirname, '..'),
       stdio: ['ignore', 'pipe', 'pipe']

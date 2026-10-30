@@ -20,3 +20,59 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  # live end-to-end against real vanilla servers, one job per Minecraft
+  # version: downloads the official server jar from piston-meta, boots a
+  # superflat + a natural-terrain world, then drives botfleet through the
+  # full REST/ws/pilot suite. this is the verification half of staying
+  # current — every version the README claims must appear in this matrix.
+  live-e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22]
+        mc: ['26.3', '26.2', '1.21.8']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25 # minecraft 26.x servers require java 25; runs 1.21.x fine
+      - run: npm ci
+      - name: boot the superflat server
+        run: |
+          MC_VERSION=${{ matrix.mc }} MC_DIR=server MC_PORT=25565 \
+            nohup ./scripts/e2e-server.sh > server-boot.log 2>&1 &
+          for i in $(seq 1 240); do
+            grep -q "Done (" server-boot.log 2>/dev/null && break
+            sleep 2
+          done
+          grep -q "Done (" server-boot.log || { echo "server did not boot"; tail -40 server-boot.log; exit 1; }
+          grep "Starting minecraft server version" server-boot.log | tail -1
+      - name: run the live e2e suite (flat + natural terrain)
+        run: |
+          BOTFLEET_LIVE_E2E=1 MC_HOST=127.0.0.1 MC_PORT=25565 MC_VERSION=${{ matrix.mc }} APP_PORT=3117 \
+            node test/live.js
+      - name: server log tail on failure
+        if: failure()
+        run: tail -60 server-boot.log server/logs/latest.log server-normal/logs/latest.log 2>/dev/null || true
+
+  # currency check — fails (softly) when a new Minecraft release exists
+  # without a support path; the version-guard workflow turns this into an
+  # issue on its daily schedule instead of blocking pull requests
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/version-check.mjs
+        continue-on-error: true

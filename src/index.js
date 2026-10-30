@@ -6,6 +6,7 @@
 // from the BOTS environment variable (a JSON array of unit options).
 
 const path = require('path')
+const { supportedVersions } = require('./version-compat')
 const { Fleet } = require('./core/fleet')
 const { createApp } = require('./api/rest')
 const { attachGateway } = require('./api/gateway')
@@ -19,6 +20,8 @@ const gateway = attachGateway({ server, fleet })
 
 server.listen(PORT, HOST, () => {
   console.log(`botfleet console: http://${HOST}:${PORT}`)
+  const versions = supportedVersions()
+  console.log(`minecraft versions: ${versions.all.join(', ')}` + (versions.overlay.length ? ` (via overlay: ${versions.overlay.join(', ')})` : ''))
   console.log('add a unit from the dashboard, or:')
   console.log(`  curl -X POST http://${HOST}:${PORT}/api/bots -d '{"name":"Scout","host":"127.0.0.1","port":25565}'`)
 })

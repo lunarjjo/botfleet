@@ -3,6 +3,7 @@
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
+const versionCompat = require('../version-compat')
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -73,6 +74,9 @@ function createApp ({ fleet, webRoot }) {
 
     if (p === '/api/health' && req.method === 'GET') {
       return sendJson(res, 200, { ok: true, uptime: Math.floor((Date.now() - startedAt) / 1000), bots: fleet.units.size, node: process.version })
+    }
+    if (p === '/api/versions' && req.method === 'GET') {
+      return sendJson(res, 200, versionCompat.supportedVersions())
     }
     if (p === '/api/bots' && req.method === 'GET') {
       return sendJson(res, 200, { bots: fleet.list() })
