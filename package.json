@@ -1,6 +1,6 @@
 {
   "name": "botfleet",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Command a fleet of Minecraft bots like an RTS: a bundled baritone-style A* pilot engine, live 2D tactical radar with path overlay, click-to-move, chat commands, mining, and fleet telemetry in one lightweight web console. Tracks the newest Minecraft versions (26.x) via a self-disabling protocol overlay.",
   "main": "src/index.js",
   "scripts": {

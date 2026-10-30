@@ -3,6 +3,31 @@
 All notable changes to botfleet are documented here.
 The format follows Keep a Changelog; versioning follows SemVer.
 
+## [0.5.0] - 2026-10-30
+
+### Added
+
+- **`run.sh` — the one-command launcher.** `./run.sh demo` turns any linux
+  box with node >= 20 into a full botfleet test bed: it auto-picks the
+  minecraft version from the installed java (25+ -> 26.2, 21-24 -> 1.21.8,
+  `MC_VERSION` overrides), downloads the vanilla server jar from Mojang on
+  first run, installs node dependencies, boots the server offline-mode,
+  starts the console, and seeds three units (Scout, Ranger, Relay).
+  Ctrl-C tears the whole stack down — no orphaned java processes. Knobs:
+  `PORT`, `MC_PORT`, `MC_SEED`, `MC_LEVEL`, `MC_DIR`, `MC_HEAP`, `JAVA_BIN`.
+- `./run.sh console` for pointing the web console at an existing server
+  without the local demo stack.
+- **GitHub release bundles**: every release now ships a `botfleet.tar.gz`
+  asset (git archive of the tag) so the console is a
+  `curl | tar xz && ./run.sh demo` away — see the README quick start.
+
+### Fixed
+
+- launcher shutdown hardening found by live-testing the demo path: signal
+  traps survive the console child, so the demo server is reaped on Ctrl-C;
+  `level-type` is only written when explicitly requested so every minecraft
+  version falls back to its own default terrain without warnings.
+
 ## [0.4.0] - 2026-10-30
 
 ### Added

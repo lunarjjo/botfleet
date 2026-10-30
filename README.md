@@ -95,18 +95,43 @@ from a running console.
 
 ## quick start
 
-You need Node.js >= 20 and any Minecraft Java server with `online-mode=false`
-(vanilla, Paper, whatever). For a throwaway test server:
+### the one-command demo (any linux box, e.g. your ubuntu laptop)
+
+Grab the release bundle and run it — Node.js >= 20 and curl are the only
+requirements up front:
 
 ```console
-$ MC_VERSION=26.3 ./scripts/e2e-server.sh   # downloads vanilla 26.3, boots a superflat
-[...] Done (1.089s)! For help, type "help"
+$ curl -fsSL -o botfleet.tar.gz \
+    https://github.com/lunarjjo/botfleet/releases/latest/download/botfleet.tar.gz
+$ tar xzf botfleet.tar.gz && cd botfleet
+$ ./run.sh demo
 ```
 
-Then, in a second terminal:
+`run.sh demo` takes it from there:
+
+1. checks your java — java 25+ runs the demo on **minecraft 26.2**, java
+   21-24 on **1.21.8** (override with `MC_VERSION=26.3` if you want another)
+2. downloads the matching vanilla server jar straight from Mojang (first
+   run only) and boots it offline-mode on `localhost:25565`
+3. installs the node dependencies (first run only)
+4. starts the console and connects three units — Scout, Ranger, Relay
+
+Open http://127.0.0.1:3000, wait for the radar to sweep in, click the map to
+move a unit. Ctrl-C stops the console **and** the demo server — nothing is
+left running. Useful knobs: `PORT`, `MC_PORT`, `MC_SEED`,
+`MC_LEVEL=minecraft\:flat`, `MC_DIR`, `MC_HEAP`, `JAVA_BIN`.
+
+`./run.sh console` boots just the web console when you already have a server
+somewhere (it needs `online-mode=false`).
+
+### from a git clone
 
 ```console
+$ git clone https://github.com/lunarjjo/botfleet && cd botfleet
+$ ./run.sh demo        # same as above
+# — or against a server you already run —
 $ npm install
+$ MC_VERSION=26.3 ./scripts/e2e-server.sh &   # throwaway vanilla 26.3, superflat
 $ BOTS='[{"name":"Scout","host":"127.0.0.1","port":25565}]' npm start
 
 botfleet console: http://127.0.0.1:3000
