@@ -22,15 +22,17 @@ function defaultBox (name) {
   return 'full'
 }
 
-function makeBlock (name, x, y, z, registry, box) {
+function makeBlock (name, x, y, z, registry, box, properties) {
   const meta = registry.blocksByName[name]
-  return {
+  const block = {
     name,
     id: meta ? meta.id : -1,
     hardness: meta && Number.isFinite(meta.hardness) ? meta.hardness : 1,
     boundingBox: box || defaultBox(name),
     position: new Vec3(x, y, z)
   }
+  if (properties) block.properties = properties
+  return block
 }
 
 class VoxelWorld {
@@ -43,13 +45,15 @@ class VoxelWorld {
     return x + ',' + y + ',' + z
   }
 
-  setBlock (x, y, z, name, box) {
-    this.blocks.set(VoxelWorld.key(x, y, z), makeBlock(name, x, y, z, this.registry, box))
+  setBlock (x, y, z, name, box, properties) {
+    this.blocks.set(VoxelWorld.key(x, y, z), makeBlock(name, x, y, z, this.registry, box, properties))
     return this
   }
 
   removeBlock (x, y, z) {
-    this.blocks.delete(VoxelWorld.key(x, y, z))
+    // a dug cell in a loaded chunk reads back as air, the way a real
+    // server reports it — never as an unknown/null cell
+    this.blocks.set(VoxelWorld.key(x, y, z), makeBlock('air', x, y, z, this.registry))
     return this
   }
 
@@ -78,6 +82,16 @@ class VoxelWorld {
   }
 }
 
+// items that plant a crop when placed on soil — the server decides the
+// resulting block in real minecraft; the fake mirrors that mapping
+const SEED_BLOCKS = {
+  wheat_seeds: 'wheat',
+  carrot: 'carrots',
+  potato: 'potatoes',
+  beetroot_seeds: 'beetroots',
+  nether_wart: 'nether_wart'
+}
+
 class FakeBot extends EventEmitter {
   constructor (opts, world) {
     super()
@@ -94,6 +108,8 @@ class FakeBot extends EventEmitter {
     this.chats = []
     this.quitCalled = false
     this.inventory = { items: () => [] }
+    this.heldItem = null
+    this.equips = []
     this.controls = { forward: false, back: false, left: false, right: false, jump: false, sprint: false, sneak: false }
     this.looks = []
     this.digs = []
@@ -106,6 +122,16 @@ class FakeBot extends EventEmitter {
   // ---- api surface -----------------------------------------------------
 
   chat (msg) { this.chats.push(msg) }
+
+  setInventory (items) {
+    this.inventory.items = () => items
+  }
+
+  async equip (item) {
+    this.equips.push(item ? item.name : null)
+    this.heldItem = item
+    return true
+  }
 
   quit () {
     this.quitCalled = true
@@ -162,11 +188,18 @@ class FakeBot extends EventEmitter {
   }
 
   async placeBlock (ref, face) {
+    // the held item decides what lands in the world, like a real bot;
+    // seeds plant crops, non-block items (or an empty hand) fall back to stone
+    let held = null
+    if (this.heldItem) {
+      held = SEED_BLOCKS[this.heldItem.name] ||
+        (this.registry.blocksByName[this.heldItem.name] ? this.heldItem.name : null)
+    }
     this.world.setBlock(
       ref.position.x + face.x,
       ref.position.y + face.y,
       ref.position.z + face.z,
-      'stone'
+      held || 'stone'
     )
     return true
   }

@@ -12,8 +12,8 @@
 //   swim       traverse through water (cost 2.2)
 //   climb      go up/down a ladder or vine column (cost 1.2)
 //   parkour    sprint-jump a one block gap (cost 2.5, opt-in)
-//   pillar     jump and place a block under yourself (opt-in, needs blocks)
-//   bridge     place a block ahead over a gap and walk it (opt-in)
+//   pillar     jump and place a block under yourself (needs blocks)
+//   bridge     place a block ahead over a bottomless gap and walk it
 //
 // any solid block in the way may be broken through when allowBreak is on:
 // its cost is the hand dig time converted to walk-equivalent blocks
@@ -38,7 +38,7 @@ const DIAGONALS = [
 
 const DEFAULTS = {
   allowBreak: true, // dig through breakable blocks when it is worth it
-  allowPlace: false, // pillar up / bridge over gaps using inventory blocks
+  allowPlace: true, // pillar up / bridge over gaps using inventory blocks
   allowParkour: false, // sprint-jump one block gaps
   allowWater: true, // swimming is legal
   allowFallDamage: false, // never take fall damage by default
@@ -213,6 +213,26 @@ function generate (view, node, settings) {
     if (land && land.kind === 'ladder') {
       if (view.climbable(nx, land.y + 1, nz) || view.passable(nx, land.y + 1, nz)) {
         out.push(movement('climb', node, { x: nx, y: land.y + 1, z: nz }, s.climbCost))
+      }
+    }
+
+    // bridge: the gap ahead has no bottom within scan range (void, fog,
+    // or lava underneath) — place a block at foot level ahead, anchored
+    // on the side face of the block we are standing on, and walk it.
+    // baritone does exactly this when building across breaks in terrain.
+    if (s.allowPlace && !land) {
+      const feetClear = view.passable(nx, y, nz) && view.passable(nx, y + 1, nz)
+      const standingSolid = view.solid(x, y - 1, z)
+      if (feetClear && standingSolid) {
+        out.push(movement('bridge', node, { x: nx, y, z: nz },
+          s.walkCost + s.ascendCost * 2 + 0.4, [], {
+          toPlace: [{
+            x: nx, y: y - 1, z: nz,
+            ref: { x, y: y - 1, z },
+            face: { x: d.dx, y: 0, z: d.dz }
+          }],
+          placeKind: 'bridge'
+        }))
       }
     }
     } // end of the !inWater block

@@ -30,12 +30,18 @@ shading, a hostile mob marked red, and the feed catching a night-time death*
 - **the pilot engine** — a bundled, original-JavaScript pathfinding engine in
   the architectural tradition of [baritone](https://github.com/cabaletta/baritone):
   A* over standing positions with a full minecraft movement vocabulary
-  (walk, diagonal, ascend, descend, fall, swim, climb, parkour, pillar),
-  honest costs (dig time from block hardness, fall damage, swim penalty),
-  goal objects (block / near / xz / y-level / composite / follow),
+  (walk, diagonal, ascend, descend, fall, swim, climb, parkour, pillar,
+  bridge), honest costs (dig time from block hardness, fall damage, swim
+  penalty), goal objects (block / near / xz / y-level / composite / follow),
   path splicing when the world changes under the plan, stuck recovery,
   and best-partial paths when the goal lies beyond the loaded world.
   No external pathfinder dependency — the whole engine ships in the repo.
+- **baritone-style processes** — `mine <block> [count]`, `build <blueprint>`
+  (construct a saved volume block by block, digging wrong blocks and
+  anchoring placements on solid faces), `farm [radius]` (harvest mature
+  crops by block state, replant when seeds are carried), and
+  `explore [radius]` (roam unvisited chunk targets inside a bounded ring).
+  Runtime tuning with `set allowPlace false` and friends.
 - **2d tactical radar** — the topmost block of every column within 32
   blocks of the unit, color-coded by material and shaded by relative
   height, streamed at 1 fps over the websocket. entities are drawn and
@@ -105,6 +111,10 @@ In-game, players talk to units by name:
 | `follow` | `<player>` or `off` | keep following a player |
 | `goto` | `<x> <z>` or `<x> <y> <z>` | pathfind to coordinates |
 | `mine` | `<block> [count]` | path to and dig blocks by name |
+| `build` | `<blueprint> [x y z]` | construct a saved blueprint here or at coords |
+| `farm` | `[radius]` | harvest and replant mature crops nearby |
+| `explore` | `[radius]` | roam unvisited chunk targets within a radius |
+| `set` | `<key> <value>` | tune a pilot setting at runtime |
 | `stop` | | halt movement and clear the task |
 | `where` | | report position and current task |
 | `say` | `<message>` | send a chat message |
@@ -173,19 +183,33 @@ The pieces, each independently unit-tested:
   unloaded cells are walls — the fleet never plans into the fog
 - `moves.js` — movement generation and costs: traverse, diagonal (corner
   rule included), ascend, descend, fall (damage-capped, water-cushioned),
-  swim, climb, parkour (opt-in), pillar/bridge (opt-in, needs blocks),
-  and dig-through: break time estimated from hardness the way vanilla
+  swim (surface-bobbing so crossings never drown the bot), climb, parkour
+  (opt-in), pillar and bridge placing (anchored on real faces, degrades
+  gracefully to no-place pathing when the inventory runs dry), and
+  dig-through: break time estimated from hardness the way vanilla
   hand-breaking works (harvestable *1.5, tool-gated *5)
 - `astar.js` — A* with node budget and wall-clock timeout, returning the
   best partial path when the goal is unreachable in the loaded world
 - `executor.js` — turns the plan into live controls: look, hold forward,
-  jump at steps, dig blockers first, place pillar blocks; re-validates the
-  next four movements every tick and **splices** (replans from the current
+  jump at steps, dig blockers first, place pillar/bridge blocks; re-validates
+  the next four movements every tick and **splices** (replans from the current
   position) the moment the world invalidates the plan; stuck detection
-  escalates from a nudge-jump to digging the obstruction to a forced replan
+  escalates from a nudge-jump to digging the obstruction to a forced replan;
+  arrival in open water auto-steps out onto the nearest dry column
 - `pilot.js` — the per-unit brain: `goto` / `come` / `follow` / `mine` /
-  `stop`, replan debouncing, partial-path continuation (walk to the edge,
-  replan as more chunks load, stop cleanly when the world runs out)
+  `build` / `farm` / `explore` / `stop`, replan debouncing, partial-path
+  continuation (walk to the edge, replan as more chunks load, stop cleanly
+  when the world runs out)
+- `blueprints.js` + `builder.js` — the build process: a blueprint is a small
+  json volume (palette + layers, or an explicit cell list); the builder diffs
+  it against the live world each round, digs what must be air, places what
+  must be solid — nearest task first, equipped from inventory, anchored on a
+  solid neighbor face, with honest stalls when material is missing
+- `farm.js` — scans block states for mature crops (wheat, carrots,
+  potatoes, beetroots, nether wart), harvests nearest-first and replants
+  on accepted soil when the seed is carried
+- `explore.js` — walks to unvisited chunk targets inside a radius measured
+  from where the process started, marking each as it goes
 
 ### baritone capability map
 
@@ -197,23 +221,26 @@ What a full baritone install does, and where botfleet stands:
 | break-through with dig costs | yes | **ported** — hardness-based, opt-out setting |
 | goal system (block/near/xz/ylevel/composite) | yes | **ported** |
 | follow / come | yes | **ported** — live target, radius slack |
-| mine by block name | yes | **ported** — nearest-match loop with count |
+| mine by block name | yes | **ported** — nearest-match loop with count, waits for drops |
+| build / schematics | yes | **ported** — json blueprints, diff-and-serve builder |
+| farming (harvest + replant) | yes | **ported** — block-state maturity, seed replanting |
+| exploring unvisited areas | yes | **ported** — bounded chunk-ring roaming |
 | best partial path toward unreachable goals | yes | **ported** — with clean-stop on no progress |
 | splicing when the world changes | segments | **ported** — tick validation + replan debounce |
 | stuck recovery | yes | **ported** — nudge, dig-out, replan escalation |
-| swim / climb / fall damage model | yes | **ported** — water landings, ladder columns |
+| swim / climb / fall damage model | yes | **ported** — surface swimming, water-arrival escape |
 | parkour jumps | yes | partial — one-gap jumps, off by default |
-| pillar / bridge placing | yes | partial — generation + executor, off by default |
+| pillar / bridge placing | yes | **ported** — inventory-aware, degrades without material |
 | `#goto`-style chat interface | prefix `#` | **ported** — "UnitName, goto x z" addressing |
+| runtime settings (#set) | yes | **ported** — `set <key> <value>` for the planner toggles |
 | elytra / nether flights | yes | roadmap |
-| builder / schematics | yes | roadmap |
 | combat / killaura behaviors | yes | out of scope for a fleet console |
 | chunk database persistence | via cache | roadmap — botfleet reloads via mineflayer |
 
 ## development
 
 ```console
-$ npm test        # 87 tests: engine, fleet, commands + self-skipping live suite
+$ npm test        # 115 tests: engine, processes, fleet, commands + self-skipping live suite
 ```
 
 The core is dependency-injected: unit and fleet tests run against a fake
@@ -227,22 +254,21 @@ a server and fails fast with a clear message instead of skipping.
 For the full black-box check, boot a server and run the end-to-end suite —
 it deploys units, drives them over REST and websocket, and asserts the
 radar, the chat bridge and the pilot engine (long-range goto, mining by
-name, and a crossing of natural terrain on a second, real-worldgen
+name, gathering materials and constructing a blueprint, plus a crossing
+of and a roaming pass over natural terrain on a second, real-worldgen
 server):
 
 ```console
 $ ./scripts/e2e-server.sh &
 $ npm run test:live          # or: MC_HOST=127.0.0.1 MC_PORT=25565 node test/live.js
 [...]
-PASS  Scout online — v1.21.8 hp 20 pos 3.5,-60,-6.5
-PASS  click-to-walk pathfinding works — arrived at 24.5,-7.5
-PASS  in-game chat commands drive units — Scout at 4.5,0.5, next to Relay
-PASS  pilot: walks 60 blocks and arrives — landed at 60,-1 (target 60,0)
-PASS  pilot: the plan streams to the console — longest path frame: 61 points
+PASS  pilot: walks 60 blocks and arrives — landed at 124,14 (target 124,13)
 PASS  pilot: mines real blocks by name — mined 2 grass_block
-PASS  pilot: crosses natural terrain and arrives — y range 63..71
+PASS  pilot: builder constructs the blueprint — build complete: 9/9 (slab)
+PASS  pilot: crosses natural terrain and arrives — from -119,62,-116 to -78,62,-115
+PASS  pilot: explores unvisited chunks on real terrain — roamed over 20 blocks
 [...]
-e2e: 29/29 checks passed
+e2e: 38/38 checks passed
 ```
 
 ## limitations and roadmap
@@ -251,11 +277,12 @@ e2e: 29/29 checks passed
   fan-out to many browsers per unit wants delta frames or per-client interest sets
 - surface-only radar: caves and interiors below the scan band are invisible
 - `come`/`follow` need the target player within the unit's render distance
-- parkour and pillar/bridge movements are generated and tested at the
-  planner level but default-off in live fleets until they earn trust
-- roadmap: elytra/nether flights and a builder/schematics mode (the big
-  baritone features still on the map), patrol routes from the UI,
-  multi-unit formations, and a scripted scenario mode
+- parkour movements cover single-block gaps and stay default-off until
+  they earn trust; the builder serves small-to-medium volumes (a few
+  thousand cells), not mega-structures
+- roadmap: elytra/nether flights, .schem file imports for the builder,
+  patrol routes from the UI, multi-unit formations, and a scripted
+  scenario mode
 
 ## credits
 

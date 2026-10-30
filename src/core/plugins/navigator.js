@@ -3,10 +3,12 @@
 // the movement layer. sits on the pilot engine — an original javascript
 // implementation of the pathfinding architecture popularized by baritone
 // (goals, A* with movement costs, splicing, stuck recovery, best partial
-// paths) — and exposes the same three verbs the console always had:
-// goto / come / follow, plus mine. one `task` label for the UI.
+// paths) — and exposes the movement verbs (goto / come / follow) plus the
+// baritone-style processes: mine, build, farm and explore. one `task`
+// label for the UI.
 
 const { Pilot } = require('../pilot/pilot')
+const { loadBlueprint } = require('../../util/blueprintStore')
 
 function attachNavigator (unit, bot) {
   const pilot = new Pilot({ bot, unit, deps: unit.deps })
@@ -80,7 +82,7 @@ function attachNavigator (unit, bot) {
   }
 
   async function goto (x, y, z, source) {
-    const r = pilot.goto(x, y, z)
+    const r = await pilot.goto(x, y, z)
     state.task = pilot.task
     const at = (y === null || y === undefined)
       ? `${Math.floor(x)} ${Math.floor(z)}`
@@ -98,7 +100,7 @@ function attachNavigator (unit, bot) {
       unit.reply(msg, source)
       return { ok: false, error: msg }
     }
-    const r = pilot.come(posOfTarget(p.entity))
+    const r = await pilot.come(posOfTarget(p.entity))
     state.task = pilot.task
     unit.log(`moving to ${p.username}`)
     unit.emit('state', unit.snapshot())
@@ -134,10 +136,66 @@ function attachNavigator (unit, bot) {
     return r
   }
 
+  async function build (args, source) {
+    if (!bot.entity) {
+      const msg = 'i have no position yet'
+      unit.reply(msg, source)
+      return { ok: false, error: msg }
+    }
+    const loaded = loadBlueprint(args.blueprint)
+    if (!loaded.ok) {
+      unit.reply(loaded.error, source)
+      return { ok: false, error: loaded.error }
+    }
+    const bp = loaded.blueprint
+    const mine = bot.entity.position
+    const origin = {
+      x: args.x === null ? Math.floor(mine.x) : Math.floor(args.x),
+      y: args.y === null ? Math.floor(mine.y) : Math.floor(args.y),
+      z: args.z === null ? Math.floor(mine.z) : Math.floor(args.z)
+    }
+    const r = pilot.build(bp, origin)
+    state.task = pilot.task
+    if (!r.ok) unit.reply(r.error || 'cannot build that', source)
+    else unit.log(`building ${bp.name} at ${origin.x} ${origin.y} ${origin.z} (${bp.placements.length} cells)`)
+    unit.emit('state', unit.snapshot())
+    return r
+  }
+
+  async function farm (radius, source) {
+    const r = pilot.farm(radius || 24)
+    state.task = pilot.task
+    if (!r.ok) unit.reply(r.error || 'cannot farm here', source)
+    unit.emit('state', unit.snapshot())
+    return r
+  }
+
+  async function explore (radius, source) {
+    const r = pilot.explore(radius || 48)
+    state.task = pilot.task
+    if (!r.ok) unit.reply(r.error || 'cannot explore from here', source)
+    unit.emit('state', unit.snapshot())
+    return r
+  }
+
+  async function set (key, value, source) {
+    const r = pilot.setSetting(key, value)
+    if (!r.ok) {
+      unit.reply(r.error, source)
+      return r
+    }
+    unit.log(`${key} = ${r.value}`)
+    return { ok: true, reply: `${key} = ${r.value}` }
+  }
+
   state.goto = goto
   state.come = come
   state.follow = follow
   state.mine = mine
+  state.build = build
+  state.farm = farm
+  state.explore = explore
+  state.set = set
   state.stop = halt
   state.pathPoints = () => pilot.pathPoints()
   state.pilotInfo = () => pilot.info()

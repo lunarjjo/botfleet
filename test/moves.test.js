@@ -215,13 +215,51 @@ test('moves: parkour is generated only when opted in', () => {
 test('moves: pillar appears only with allowPlace', () => {
   const w = flat()
   const v = viewOf(w)
-  const off = generate(v, { x: 0, y: 64, z: 0 }, DEFAULTS)
+  const off = generate(v, { x: 0, y: 64, z: 0 }, Object.assign({}, DEFAULTS, { allowPlace: false }))
   assert.ok(!off.find((m) => m.type === 'pillar'))
-  const on = generate(v, { x: 0, y: 64, z: 0 }, Object.assign({}, DEFAULTS, { allowPlace: true }))
+  // allowPlace now defaults to true (baritone parity): pillar by default
+  const on = generate(v, { x: 0, y: 64, z: 0 }, DEFAULTS)
   const p = on.find((m) => m.type === 'pillar')
   assert.ok(p)
   assert.strictEqual(p.to.y, 65)
   assert.deepStrictEqual(p.toPlace, [{ x: 0, y: 64, z: 0 }])
+})
+
+test('moves: bridge appears over bottomless gaps when placing is allowed', () => {
+  const w = new VoxelWorld()
+  // a shelf ending at x=0 (feet 64); ahead of it: known air over nothing
+  w.fill(-3, 63, -2, 0, 63, 2, 'grass_block')
+  w.fill(-3, 64, -2, 0, 68, 2, 'air')
+  w.fill(1, 64, -2, 3, 68, 2, 'air') // the gap is KNOWN air (not fog)
+  const v = viewOf(w)
+  const s = DEFAULTS // allowPlace defaults true now
+  const ms = generate(v, { x: 0, y: 64, z: 0 }, s)
+  const bridge = ms.find((m) => m.type === 'bridge' && m.to.x === 1)
+  assert.ok(bridge, 'bridge movement exists toward the known gap')
+  assert.strictEqual(bridge.to.y, 64)
+  assert.deepStrictEqual(bridge.toPlace, [{
+    x: 1, y: 63, z: 0, ref: { x: 0, y: 63, z: 0 }, face: { x: 1, y: 0, z: 0 }
+  }])
+  assert.ok(bridge.cost > 1, 'placing costs more than walking')
+
+  // without allowPlace there is no bridge
+  const noPlace = Object.assign({}, DEFAULTS, { allowPlace: false })
+  assert.ok(!generate(v, { x: 0, y: 64, z: 0 }, noPlace).some((m) => m.type === 'bridge'))
+
+  // when the far side has ground it is a traverse, not a bridge
+  w.fill(1, 63, -2, 3, 63, 2, 'grass_block')
+  const ms2 = generate(v, { x: 0, y: 64, z: 0 }, s)
+  assert.ok(!ms2.some((m) => m.type === 'bridge'), 'landing exists -> no bridge')
+
+  // over lava (known, deadly, no landing) the bridge is the way across
+  const w2 = new VoxelWorld()
+  w2.fill(-3, 63, -2, 0, 63, 2, 'grass_block')
+  w2.fill(-3, 64, -2, 0, 68, 2, 'air')
+  w2.fill(1, 55, -2, 3, 63, 2, 'lava')
+  w2.fill(1, 64, -2, 3, 68, 2, 'air')
+  const v2 = viewOf(w2)
+  const over = generate(v2, { x: 0, y: 64, z: 0 }, s).find((m) => m.type === 'bridge')
+  assert.ok(over, 'bridge spans a lava channel')
 })
 
 test('moves: dig cost follows the hand-dig formula', () => {

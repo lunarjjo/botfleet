@@ -127,8 +127,8 @@ test('pilot: mines named blocks and counts them', async () => {
     assert.strictEqual(r.ok, true)
     await until(() => fleet.list()[0].task === 'idle', 'mining to finish', 30000)
     assert.strictEqual(created[0].digs.filter((n) => n === 'dirt').length, 2)
-    assert.ok(!w.blockAtXYZ(3, 64, 0))
-    assert.ok(!w.blockAtXYZ(5, 64, 0))
+    assert.strictEqual(w.blockAtXYZ(3, 64, 0).name, 'air')
+    assert.strictEqual(w.blockAtXYZ(5, 64, 0).name, 'air')
   } finally { cleanup(fleet) }
 })
 

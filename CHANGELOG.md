@@ -3,6 +3,62 @@
 All notable changes to botfleet are documented here.
 The format follows Keep a Changelog; versioning follows SemVer.
 
+## [0.3.0] - 2026-10-30
+
+### Added
+
+- **the builder process** (`build <blueprint> [x y z]`): a from-scratch
+  take on baritone's BuilderProcess. Blueprints are small json volumes
+  (palette + ascii layers, or an explicit cell list) parsed and
+  validated by `src/core/pilot/blueprints.js`; the builder
+  (`src/core/pilot/builder.js`) diffs the blueprint against the live
+  world every round, digs what must be air, places what must be solid —
+  nearest task first, equipped from the inventory, anchored on a solid
+  neighbor face — and reports honest stalls when material is missing
+  or cells lie beyond the loaded world. Two blueprints ship in
+  `blueprints/` (`slab`, `post`); fleets can carry their own in
+  `./blueprints`.
+- **the farm process** (`farm [radius]`): scans block states for mature
+  crops (wheat, carrots, potatoes, beetroots, nether wart), harvests
+  nearest-first, and replants the same crop on accepted soil (farmland,
+  soul sand) when the seed is carried (`src/core/pilot/farm.js`).
+- **the explore process** (`explore [radius]`): roams unvisited chunk
+  targets inside a radius measured from where the process started,
+  walking partial paths toward the fog and continuing as chunks load
+  (`src/core/pilot/explore.js`).
+- **the bridge movement**: when the gap ahead has no bottom (void, fog,
+  lava), the planner can now place a block at foot level — anchored on
+  the side face of the block being stood on — and cross it. The executor
+  generalizes placement to explicit ref/face pairs, equips a real block
+  from the inventory, sneaks over the edge on bridges, and gives up with
+  a splice after repeated failed attempts.
+- **runtime settings** (`set <key> <value>`): toggle the planner live —
+  `allowBreak`, `allowPlace`, `allowParkour`, `allowWater`,
+  `allowFallDamage`, fall/water caps, and the base movement costs.
+- `allowPlace` now defaults to true (baritone parity): pillar and bridge
+  placements participate in planning, and a unit that runs out of
+  placeable blocks degrades gracefully to no-place pathing for the rest
+  of the task instead of stalling.
+- Live end-to-end suite extended to 38 checks: a full gather-and-build
+  loop (mine dirt, construct a 3x3 blueprint, verified 9/9) and an
+  explore pass over natural terrain.
+
+### Changed
+
+- Swimming bots hold the surface (bob) so long crossings no longer
+  drown them, and arriving in open water auto-steps out onto the
+  nearest dry column.
+- Mining waits briefly for dropped items to reach the inventory before
+  walking on, so `mine` no longer abandons its own drops.
+- Planning against a freshly spawning, mostly-unloaded world retries
+  for a couple of seconds before reporting "no path".
+
+### Fixed
+
+- Arriving mid-plan no longer resets `follow` (the follow timer owns its
+  arrivals) and process tasks (`mine`/`build`/`farm`/`explore`) keep
+  their task labels for the whole job.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

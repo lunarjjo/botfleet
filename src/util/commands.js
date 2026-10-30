@@ -9,12 +9,17 @@ const NAME_RE = /^[A-Za-z0-9_]{1,16}$/
 const MAX_MESSAGE = 256
 const BLOCK_NAME_RE = /^[a-z0-9_]+$/
 const MAX_MINE_COUNT = 64
+const BLUEPRINT_NAME_RE = /^[a-z0-9_-]{1,48}$/
 
 const COMMANDS = [
   { name: 'come', args: '[player]', help: 'walk to a player (defaults to the commander)' },
   { name: 'follow', args: '<player> | off', help: 'keep following a player, or stop' },
   { name: 'goto', args: '<x> <z> | <x> <y> <z>', help: 'pathfind to coordinates' },
   { name: 'mine', args: '<block> [count]', help: 'pathfind to and dig blocks by name' },
+  { name: 'build', args: '<blueprint> [x y z]', help: 'construct a saved blueprint here or at coords' },
+  { name: 'farm', args: '[radius]', help: 'harvest and replant mature crops nearby' },
+  { name: 'explore', args: '[radius]', help: 'roam unvisited chunk targets within a radius' },
+  { name: 'set', args: '<key> <value>', help: 'tune a pilot setting (allowPlace, allowParkour, ...)' },
   { name: 'stop', args: '', help: 'halt movement and clear the current task' },
   { name: 'where', args: '', help: 'report current coordinates' },
   { name: 'say', args: '<message>', help: 'send a chat message' },
@@ -96,6 +101,51 @@ function parseCommand (raw) {
         count = Number(rest[1])
       }
       return { ok: true, name, args: { block, count } }
+    }
+    case 'build': {
+      if (rest.length < 1 || rest.length > 4) {
+        return { ok: false, error: 'usage: build <blueprint> [x y z]' }
+      }
+      const blueprint = rest[0].toLowerCase()
+      if (!BLUEPRINT_NAME_RE.test(blueprint)) {
+        return { ok: false, error: `"${rest[0]}" is not a blueprint name` }
+      }
+      const coords = []
+      for (const tok of rest.slice(1)) {
+        const v = num(tok)
+        if (v === null) return { ok: false, error: coordError(tok) }
+        coords.push(v)
+      }
+      if (coords.length !== 0 && coords.length !== 2 && coords.length !== 3) {
+        return { ok: false, error: 'usage: build <blueprint> [x y z]' }
+      }
+      const args = { blueprint, x: null, y: null, z: null }
+      if (coords.length === 2) {
+        args.x = coords[0]
+        args.z = coords[1] // x z form: the y level comes from the unit
+      } else if (coords.length === 3) {
+        args.x = coords[0]
+        args.y = coords[1]
+        args.z = coords[2]
+      }
+      return { ok: true, name, args }
+    }
+    case 'farm':
+    case 'explore': {
+      const cap = name === 'farm' ? 48 : 256
+      if (rest.length > 1) return { ok: false, error: `usage: ${name} [radius]` }
+      let radius = null
+      if (rest.length === 1) {
+        if (!/^\d+$/.test(rest[0]) || Number(rest[0]) < 1 || Number(rest[0]) > cap) {
+          return { ok: false, error: `radius must be 1-${cap}` }
+        }
+        radius = Number(rest[0])
+      }
+      return { ok: true, name, args: { radius } }
+    }
+    case 'set': {
+      if (rest.length !== 2) return { ok: false, error: 'usage: set <key> <value>' }
+      return { ok: true, name, args: { key: rest[0], value: rest[1] } }
     }
     case 'stop':
     case 'where':

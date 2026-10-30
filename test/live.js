@@ -243,6 +243,40 @@ async function main () {
     }, 180000, 'Relay to mine 2 grass blocks').then(() => true)
     const minedSeen = msgs.find((m) => m.t === 'log' && m.name === 'Relay' && /mined 2 grass_block/.test(m.text))
     check('pilot: mines real blocks by name', !!minedSeen && !!minedLog, minedSeen ? minedSeen.text : 'no mine log seen')
+
+    // 10.5 builder process: gather dirt, then construct a blueprint.
+    // mining on a live server can drop items the bot never touches, so
+    // the whole gather-and-build cycle retries — like a real operator.
+    let built = null
+    for (let attempt = 1; attempt <= 2 && !built; attempt++) {
+      await post('/api/bots/Relay/command', { text: 'mine dirt 11' })
+      await until(async () => {
+        const r = await get('/api/bots')
+        const b = r.body.bots.find((x) => x.name === 'Relay')
+        return b && b.task === 'idle'
+      }, 240000, `Relay to mine dirt (attempt ${attempt})`).catch(() => null)
+      const relayHere = (await get('/api/bots')).body.bots.find((b) => b.name === 'Relay')
+      if (!relayHere) break
+      const slabX = Math.round(relayHere.position.x) + 5
+      const slabZ = Math.round(relayHere.position.z) + 5
+      if (attempt === 1) {
+        const buildCmd = await post('/api/bots/Relay/command', { text: `build slab ${slabX} ${slabZ}` })
+        check('pilot: build command accepted', buildCmd.body.ok, buildCmd.body.result ? buildCmd.body.result.reply : '')
+      } else {
+        await post('/api/bots/Relay/command', { text: `build slab ${slabX} ${slabZ}` })
+      }
+      built = await until(() => msgs.find((m) => m.t === 'log' && m.name === 'Relay' && /build complete: 9\/9/.test(m.text)), 240000, `Relay to finish the slab (attempt ${attempt})`).catch(() => null)
+      if (!built) {
+        await post('/api/bots/Relay/command', { text: 'stop' })
+        await until(async () => {
+          const r = await get('/api/bots')
+          const b = r.body.bots.find((x) => x.name === 'Relay')
+          return b && b.task === 'idle'
+        }, 20000, 'Relay to settle').catch(() => null)
+      }
+    }
+    check('pilot: builder constructs the blueprint', !!built, built ? built.text : 'no build-complete log across attempts')
+
     await until(async () => {
       const r = await get('/api/bots')
       return r.body.bots.length === 1
@@ -299,6 +333,26 @@ async function main () {
         `from ${Math.round(rStart.x)},${Math.round(rStart.y)},${Math.round(rStart.z)} to ${Math.round(rEnd.x)},${Math.round(rEnd.y)},${Math.round(rEnd.z)} (y range ${Math.round(yMin)}..${Math.round(yMax)}, ${terrainReplans} replans)`)
       check('pilot: terrain crossing handled elevation', (yMax - yMin) >= 1 || terrainReplans >= 1,
         `y range ${Math.round(yMin)}..${Math.round(yMax)}, replans ${terrainReplans}`)
+
+      // 11.5 explore process on natural terrain: either the ring finishes
+      // with a summary log, or the bot is plainly far from where it started
+      const rBefore = (await get('/api/bots')).body.bots.find((b) => b.name === 'Ranger').position
+      const expCmd = await post('/api/bots/Ranger/command', { text: 'explore 24' })
+      check('pilot: explore accepted', expCmd.body.ok, expCmd.body.result ? expCmd.body.result.reply : '')
+      const roamed = await until(async () => {
+        const done = msgs.find((m) => m.t === 'log' && m.name === 'Ranger' && /explored \d+ targets/.test(m.text))
+        if (done) return { done }
+        const r = await get('/api/bots')
+        const b = r.body.bots.find((x) => x.name === 'Ranger')
+        if (b && b.position && Math.hypot(b.position.x - rBefore.x, b.position.z - rBefore.z) > 20) {
+          return { roamed: true }
+        }
+        return null
+      }, 200000, 'Ranger to roam unvisited chunks').catch(() => null)
+      const legs = roamed && roamed.done ? Number(roamed.done.text.match(/explored (\d+) targets/)[1]) : null
+      check('pilot: explores unvisited chunks on real terrain', !!roamed,
+        legs !== null ? `${legs} legs covered` : 'roamed over 20 blocks from the origin')
+
       const rangerGone = await del('/api/bots/Ranger')
       check('DELETE Ranger (200)', rangerGone.status === 200)
     } finally {

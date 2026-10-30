@@ -19,6 +19,7 @@
 
 const { EventEmitter } = require('events')
 const { generate } = require('./moves')
+const { equipForPlace } = require('./place')
 
 const TICK_MS = 100
 const LOOKAHEAD = 4
@@ -38,6 +39,8 @@ class Executor extends EventEmitter {
     this.index = 0
     this.running = false
     this.digging = false
+    this.placing = false
+    this.placeTries = 0
     this.timer = null
     this.stuckSince = 0
     this.stuckEvents = 0
@@ -58,6 +61,8 @@ class Executor extends EventEmitter {
     this.stuckSince = 0
     this.lastDist = Infinity
     this.worseTicks = 0
+    this.placeTries = 0
+    this.noMaterial = false
     if (this.queue.length === 0) {
       this.finish('arrived')
       return
@@ -152,9 +157,9 @@ class Executor extends EventEmitter {
       return
     }
 
-    // place support (pillar) before stepping up
+    // place support (pillar) or the next bridge plank before stepping
     if (m.toPlace && m.toPlace.length > 0 && !this.placedFor(m)) {
-      this.placeFor(m, p)
+      this.placeFor(m).catch(() => { /* guarded inside */ })
       return
     }
 
@@ -193,9 +198,11 @@ class Executor extends EventEmitter {
         this.control('jump', false)
         break
       case 'swim':
+        // surface swim: keep bobbing up so a long crossing never drains
+        // the air bar — a submerged bot drowns, a floating one does not
         this.control('forward', true)
         this.control('sprint', false)
-        this.control('jump', false)
+        this.control('jump', true)
         break
       case 'ascend':
       case 'pillar':
@@ -225,9 +232,10 @@ class Executor extends EventEmitter {
         this.control('sprint', false)
         break
       case 'parkour':
+      case 'bridge':
         this.control('forward', true)
-        this.control('sprint', true)
-        this.control('jump', true)
+        this.control('sprint', m.type === 'parkour')
+        this.control('jump', m.type === 'parkour')
         break
       default:
         this.control('forward', true)
@@ -242,7 +250,9 @@ class Executor extends EventEmitter {
     const vert = Math.abs(p.y - m.to.y)
 
     const v = this.bot.entity.velocity
-    const settled = !v || !Number.isFinite(v.y) || Math.abs(v.y) < 0.35
+    const inWaterNow = this.view.water(Math.floor(p.x), Math.floor(p.y + 0.1), Math.floor(p.z))
+    // a swimming bot bobs by design — do not wait for it to settle
+    const settled = inWaterNow || !v || !Number.isFinite(v.y) || Math.abs(v.y) < 0.35
 
     if (horz <= ARRIVE_HORZ && vert <= ARRIVE_VERT && settled) return true
 
@@ -264,6 +274,7 @@ class Executor extends EventEmitter {
     this.stuckPos = null
     this.lastDist = Infinity
     this.worseTicks = 0
+    this.placeTries = 0
     this.emit('progress', { index: this.index, total: this.queue.length })
     if (this.index >= this.queue.length) {
       this.finish('arrived')
@@ -351,34 +362,85 @@ class Executor extends EventEmitter {
     }
   }
 
-  // ---- placing (pillar) ------------------------------------------------
+  // ---- placing (pillar + bridge) ---------------------------------------
 
   placedFor (m) {
     const c = m.toPlace[0]
     return this.view.solid(c.x, c.y, c.z)
   }
 
-  placeFor (m, p) {
-    const c = m.toPlace[0]
-    const ref = this.blockAt({ x: c.x, y: c.y - 1, z: c.z })
-    if (!ref) return
-    // jump first, place the block where our feet were
-    this.control('jump', true)
-    const place = () => {
-      try {
-        this.bot.placeBlock(ref, new this.Vec3(0, 1, 0))
-      } catch (e) {
-        this.emit('log', 'place failed: ' + String(e.message || e).slice(0, 60))
-      }
+  bumpPlaceTries () {
+    this.placeTries++
+    if (this.placeTries > 8) {
+      this.placeTries = 0
+      this.emit('splice', { at: this.index, reason: 'cannot place' })
     }
-    const wait = setInterval(() => {
-      if (p.y - c.y >= 0.8) {
-        clearInterval(wait)
-        place()
+  }
+
+  async placeFor (m) {
+    if (this.placing) return
+    this.placing = true
+    try {
+      const c = m.toPlace[0]
+      const bridge = m.placeKind === 'bridge'
+      // an explicit ref/face pair (bridge) or the block below (pillar)
+      const ref = c.ref ? this.blockAt(c.ref) : this.blockAt({ x: c.x, y: c.y - 1, z: c.z })
+      if (!ref) {
+        this.bumpPlaceTries()
+        return
+      }
+      const face = c.face || { x: 0, y: 1, z: 0 }
+      const item = await equipForPlace(this.view, this.bot, c.block || null)
+      if (!item) {
+        this.emit('log', c.block ? `no ${c.block} left to place` : 'nothing in the inventory to place')
+        this.noMaterial = true
+        this.emit('noMaterial')
+        this.bumpPlaceTries()
+        return
+      }
+      if (bridge) {
+        // stand still, sneak over the edge, click the ledge face sideways
+        this.control('forward', false)
+        this.control('sneak', true)
+        this.lookAt(c.x, c.y, c.z, 0.5)
+        await this.bot.placeBlock(ref, new this.Vec3(face.x, face.y, face.z))
+        setTimeout(() => this.control('sneak', false), 250)
+      } else {
+        // pillar: jump first, place the block where our feet were
+        const p0 = this.pos()
+        this.control('jump', true)
+        const rose = await this.waitUntil(() => {
+          const p = this.pos()
+          return p && p0 && p.y - p0.y >= 0.6
+        }, 900)
+        if (!rose) {
+          this.control('jump', false)
+          this.bumpPlaceTries()
+          return
+        }
+        await this.bot.placeBlock(ref, new this.Vec3(face.x, face.y, face.z))
         this.control('jump', false)
       }
-    }, 50)
-    setTimeout(() => clearInterval(wait), 1500)
+    } catch (e) {
+      this.emit('log', 'place failed: ' + String(e.message || e).slice(0, 60))
+      this.bumpPlaceTries()
+    } finally {
+      this.placing = false
+    }
+  }
+
+  waitUntil (fn, timeoutMs) {
+    return new Promise((resolve) => {
+      const t0 = Date.now()
+      const iv = setInterval(() => {
+        let ok = false
+        try { ok = fn() } catch (e) { ok = false }
+        if (ok || Date.now() - t0 > timeoutMs) {
+          clearInterval(iv)
+          resolve(ok && Date.now() - t0 <= timeoutMs)
+        }
+      }, 40)
+    })
   }
 
   snapshot () {

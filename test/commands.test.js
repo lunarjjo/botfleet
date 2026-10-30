@@ -110,3 +110,42 @@ test('mine: rejects junk names and bad counts', () => {
   assert.ok(!parseCommand('mine dirt x').ok)
   assert.ok(!parseCommand('mine dirt 2 extra').ok)
 })
+
+test('build: blueprint name with optional origin coords', () => {
+  assert.deepStrictEqual(
+    parseCommand('build slab'),
+    { ok: true, name: 'build', args: { blueprint: 'slab', x: null, y: null, z: null } }
+  )
+  assert.deepStrictEqual(
+    parseCommand('build post 3 -60 5'),
+    { ok: true, name: 'build', args: { blueprint: 'post', x: 3, y: -60, z: 5 } }
+  )
+  assert.deepStrictEqual(
+    parseCommand('build slab 12 30'),
+    { ok: true, name: 'build', args: { blueprint: 'slab', x: 12, y: null, z: 30 } }
+  )
+})
+
+test('build: rejects bad names and coord junk', () => {
+  assert.ok(!parseCommand('build').ok)
+  assert.ok(!parseCommand('build slab 1 2 3 4').ok)
+  assert.ok(!parseCommand('build no spaces').ok)
+  assert.ok(!parseCommand('build slab 1 two 3').ok)
+  assert.ok(parseCommand('build slab 1 2').ok, 'x z form is legal')
+})
+
+test('farm and explore: optional radius with caps', () => {
+  assert.deepStrictEqual(parseCommand('farm'), { ok: true, name: 'farm', args: { radius: null } })
+  assert.strictEqual(parseCommand('farm 32').args.radius, 32)
+  assert.ok(!parseCommand('farm 49').ok)
+  assert.ok(!parseCommand('farm 0').ok)
+  assert.strictEqual(parseCommand('explore 256').args.radius, 256)
+  assert.ok(!parseCommand('explore 257').ok)
+  assert.ok(!parseCommand('explore 3 4').ok)
+})
+
+test('set: key and value pairs', () => {
+  assert.deepStrictEqual(parseCommand('set allowPlace false'), { ok: true, name: 'set', args: { key: 'allowPlace', value: 'false' } })
+  assert.ok(!parseCommand('set allowPlace').ok)
+  assert.ok(!parseCommand('set').ok)
+})

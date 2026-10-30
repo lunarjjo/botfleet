@@ -2,6 +2,7 @@
 
 const { EventEmitter } = require('events')
 const { parseCommand, helpLines } = require('../util/commands')
+const { loadBlueprint } = require('../util/blueprintStore')
 const { attachNavigator } = require('./plugins/navigator')
 const { attachScout } = require('./plugins/scout')
 const { attachSurvivor } = require('./plugins/survivor')
@@ -238,6 +239,22 @@ class Unit extends EventEmitter {
         case 'mine': {
           if (!this.navigator) throw new Error('not online')
           return this.navigator.mine([args.block], args.count, source)
+        }
+        case 'build': {
+          if (!this.navigator) throw new Error('not online')
+          return this.navigator.build(args, source)
+        }
+        case 'farm': {
+          if (!this.navigator) throw new Error('not online')
+          return this.navigator.farm(args.radius, source)
+        }
+        case 'explore': {
+          if (!this.navigator) throw new Error('not online')
+          return this.navigator.explore(args.radius, source)
+        }
+        case 'set': {
+          if (!this.navigator) throw new Error('not online')
+          return this.navigator.set(args.key, args.value, source)
         }
         case 'come': {
           if (!this.navigator) throw new Error('not online')
