@@ -27,6 +27,10 @@ The format follows Keep a Changelog; versioning follows SemVer.
   traps survive the console child, so the demo server is reaped on Ctrl-C;
   `level-type` is only written when explicitly requested so every minecraft
   version falls back to its own default terrain without warnings.
+- live e2e flake hardening: the builder gather now mines a surplus (drops
+  scatter on real physics) with one more gather-and-build attempt, and the
+  explore check retries with a wider ring when the first crawls — the
+  assertions themselves are unchanged.
 
 ## [0.4.0] - 2026-10-30
 
