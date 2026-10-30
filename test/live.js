@@ -277,7 +277,16 @@ async function main () {
         }, 20000, 'Relay to settle').catch(() => null)
       }
     }
-    check('pilot: builder constructs the blueprint', !!built, built ? built.text : 'no build-complete log across attempts')
+    if (!built) {
+      // surface why: the unit's live task/pilot state plus the last
+      // build-related log lines, so a CI flake speaks instead of guessing
+      const rb = (await get('/api/bots')).body.bots.find((b) => b.name === 'Relay')
+      const tailLogs = msgs.filter((m) => m.t === 'log' && m.name === 'Relay' && /(build|material|dirt|place|partial|no path)/i.test(m.text)).slice(-3).map((m) => m.text)
+      const why = `no build-complete log across attempts — task: ${rb ? rb.task : 'gone'}, pilot: ${rb && rb.pilot ? `${rb.pilot.task} ${rb.pilot.progress}/${rb.pilot.total} stuck:${rb.pilot.stuck}` : '?'}, logs: ${tailLogs.join(' | ') || 'none'}`
+      check('pilot: builder constructs the blueprint', false, why)
+    } else {
+      check('pilot: builder constructs the blueprint', true, built.text)
+    }
 
     await until(async () => {
       const r = await get('/api/bots')

@@ -282,3 +282,27 @@ test('pilot: stuck detection logs and recovers', async () => {
     }, 'scout to recover and finish', 25000)
   } finally { cleanup(fleet) }
 })
+
+test('pilot: goto keeps waiting for slow chunk loading', async () => {
+  // the bot stands on a single known column — its spawn pocket — while
+  // everything else is fog, mimicking chunk streaming right after spawn.
+  // the wider world only becomes visible 3.5s in, past the old two-retry
+  // grace (2.4s): a goto issued in that window must keep re-planning
+  // instead of giving up with "no path" — slow hardware (contended CI
+  // runners, modest laptops) hits exactly this window in the wild.
+  const w = new VoxelWorld()
+  w.ground(0, 0, 0, 0, 63) // exactly one standable column: the spawn pocket
+  const { fleet, created } = makeFleet(w)
+  try {
+    fleet.add({ name: 'Scout', autoReconnect: false })
+    created[0].spawnAt(0.5, 64, 0.5)
+    const grow = setTimeout(() => w.ground(-4, -4, 12, 4, 63), 3500)
+    const res = await fleet.command('Scout', 'goto 8 0')
+    await until(() => fleet.list()[0].task === 'idle', 'goto to settle after the fog lifts', 30000)
+    const s = fleet.list()[0]
+    assert.ok(res.ok, 'goto accepted despite the fog')
+    assert.ok(s.position.x >= 6, `bot actually walked east after the world loaded (x=${s.position.x})`)
+    assert.ok(s.position.x <= 9.5, `and stopped near the goal (x=${s.position.x})`)
+    clearTimeout(grow)
+  } finally { cleanup(fleet) }
+})

@@ -3,6 +3,22 @@
 All notable changes to botfleet are documented here.
 The format follows Keep a Changelog; versioning follows SemVer.
 
+## [0.5.1] - 2026-10-30
+
+### Fixed
+
+- the pilot's chunk-grace window at launch doubled: a goto/mine/build
+  issued in the first seconds after spawning on slow hardware (contended
+  CI runners, modest laptops) could give up with "no path" before the
+  spawn chunks finished streaming — the planner now re-tries for up to
+  ~4.8s instead of ~2.4s, with a regression test that fails on the old
+  window.
+- live e2e hardening (continuing 0.5.0's CI flake hunt): the builder
+  gather mines a surplus (drops scatter under real physics) with a third
+  gather-and-build attempt, the explore check retries with a wider ring,
+  and a failed builder check now reports the unit's live task/pilot
+  state plus recent build logs instead of a bare "no build-complete log".
+
 ## [0.5.0] - 2026-10-30
 
 ### Added

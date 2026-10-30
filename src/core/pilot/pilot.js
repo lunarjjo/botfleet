@@ -131,9 +131,11 @@ class Pilot extends EventEmitter {
     }
     // the world around a fresh spawn loads in over a couple of seconds;
     // a plan against an all-fog world fails honestly but pointlessly, so
-    // give the chunks a moment to arrive before declaring no path
+    // give the chunks a moment to arrive before declaring no path. slow
+    // hardware (contended CI runners, modest laptops) can take past the
+    // old two retries, so the grace window is four.
     let r = this.planNow(goal)
-    for (let tries = 0; r.status !== 'found' && r.status !== 'partial' && tries < 2; tries++) {
+    for (let tries = 0; r.status !== 'found' && r.status !== 'partial' && tries < 4; tries++) {
       await new Promise((resolve) => setTimeout(resolve, 1200))
       r = this.planNow(goal)
     }
